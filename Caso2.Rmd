@@ -1,0 +1,128 @@
+---
+title: "Caso 2"
+author: "Sebastián Lozano, Jherson Guzman"
+date: "7/10/2023"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r cargar datos, y librería}
+library(readr)
+library(readxl)
+library(dplyr)
+library(ggplot2)
+
+setwd("C:/Bayesiana/Caso2")
+saber11 <- read.csv("SB11_20222.txt", sep = ";", header = TRUE,dec = ".")
+
+```
+
+```{r Tratamiento de datos}
+#Nacionalidad colombiana
+#Residencia en Colombia
+#Proceso de investigación en el Icfes en estado de “Publicar”.
+#Ubicación del colegio no es San Andrés.
+#Sin datos faltantes en la ubicación del colegio por municipio, la ubicación del colegio pordepartamento y el puntaje globa
+
+datos <- saber11 %>%
+  filter(ESTU_NACIONALIDAD == "COLOMBIA"&
+           ESTU_PAIS_RESIDE == "COLOMBIA" &
+            COLE_COD_DEPTO_UBICACION != 88 &
+           ESTU_ESTADOINVESTIGACION=="PUBLICAR" 
+           ) %>%
+  as.data.frame()
+
+nrow(datos)
+
+#ya hay 525061
+
+# cambiamos COLE_COD_DEPTO_UBICACION a char
+datos$COLE_COD_DEPTO_UBICACION<-as.character(datos$COLE_COD_DEPTO_UBICACION)
+datos$COLE_COD_DEPTO_UBICACION<-ifelse(datos$COLE_COD_DEPTO_UBICACION=="5","05",datos$COLE_COD_DEPTO_UBICACION)
+datos$COLE_COD_DEPTO_UBICACION<-ifelse(datos$COLE_COD_DEPTO_UBICACION=="8","08",datos$COLE_COD_DEPTO_UBICACION)
+
+# cambiamos COLE_COD_MCPIO_UBICACION a char
+datos$COLE_COD_MCPIO_UBICACION<-as.character(datos$COLE_COD_MCPIO_UBICACION)
+datos$COLE_COD_MCPIO_UBICACION<-ifelse(datos$COLE_COD_DEPTO_UBICACION=="05",paste("0",datos$COLE_COD_MCPIO_UBICACION,sep=""),datos$COLE_COD_MCPIO_UBICACION)
+datos$COLE_COD_MCPIO_UBICACION<-ifelse(datos$COLE_COD_DEPTO_UBICACION=="08",paste("0",datos$COLE_COD_MCPIO_UBICACION,sep=""),datos$COLE_COD_MCPIO_UBICACION)
+
+
+# Revisamos que no hayan datos faltantes
+sum(is.na(datos$COLE_COD_MCPIO_UBICACION))
+sum(is.na(datos$COLE_COD_DEPTO_UBICACION))
+sum(is.na(datos$PUNT_GLOBAL))
+
+##Guardamos los datos, para su posterior manipulación.
+save(datos, file = "saber11modificado.rdata")
+
+```
+
+
+```{r Implementación Modelos}
+mod1 <- function(B,y,mu0,gamma0,nu0,s20){
+  #tamaños
+  n <- length(y)
+  ybar <- mean(y)
+  
+  #valores inicales
+  sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
+  
+  #almacenamiento
+  #THETA <- matrix(data = NA, nrow = ceiling((B-1000))/10 ,ncol = 2)
+  #LL <- matrix(data = NA, nrow = ceiling((B-1000))/10 ,ncol = 1)
+  
+  THETA <- matrix(data = NA, nrow = B ,ncol = 2)
+  LL <- matrix(data = NA, nrow = B ,ncol = 1)
+  
+  #cadena
+  for (b in 1:B) {
+    #actualizar theta
+    vtheta <- 1/(n*sig2+1/gamma0)
+    theta <- rnorm(n = 1, mean = (n*ybar/sig2 + mu0/gamma0)*vtheta, sd = sqrt(vtheta))
+    
+    #actualizar sigma^2
+    sig2 <- 1/rgamma(n = 1, shape = (n+nu0)/2,rate = (nu0+s20+sum((y-theta)^2))/2)
+    
+    #if(b >= 1000 &&  (b - 1000) %% 10 == 0){
+    #almacenar valores
+     THETA[b,] <-  c(theta,sig2)
+    #Log-verosimilitud
+     LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
+    #}
+  }
+  #fin de la cadena
+  
+  #salida
+  colnames(THETA) <- c("theta","sig2")
+  colnames(LL) <- c("ll")
+  THETA <- as.data.frame(THETA)
+  LL <- as.data.frame(LL)
+  return(list(THETA = THETA,LL = LL))
+}
+```
+
+
+```{r calculo modelo 1}
+#Hiperparametros
+y <- datos$PUNT_GLOBAL
+mu0 <- 250
+gamma0 <- 50^2
+nu0 <- 1 
+s20 <- 50^2
+
+
+tictoc::tic()
+set.seed(2023)
+chain1 <- mod1(B = 10000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
+tictoc::toc()
+```
+```{r}
+plot(chain1$LL,type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
+plot(chain1$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
+plot(chain1$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+```
+
