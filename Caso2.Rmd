@@ -1,6 +1,6 @@
 ---
 title: "Caso 2"
-author: "Sebastián Lozano, Jherson Guzman"
+author: "Sebastián Lozano, Mauricio Caro"
 date: "7/10/2023"
 output: pdf_document
 ---
@@ -63,42 +63,103 @@ save(datos, file = "saber11modificado.rdata")
 
 
 ```{r Implementación Modelos}
-mod1 <- function(B,y,mu0,gamma0,nu0,s20){
+mod1beta  <- function(B,y,mu0,gamma0,nu0,s20){
   #tamaños
   n <- length(y)
   ybar <- mean(y)
-  
+  ysum <- sum(y)
   #valores inicales
   sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
   
   #almacenamiento
-  #THETA <- matrix(data = NA, nrow = ceiling((B-1000))/10 ,ncol = 2)
-  #LL <- matrix(data = NA, nrow = ceiling((B-1000))/10 ,ncol = 1)
-  
-  THETA <- matrix(data = NA, nrow = B ,ncol = 2)
-  LL <- matrix(data = NA, nrow = B ,ncol = 1)
+  THETA <- matrix(data = NA, nrow = B, ncol = 2)
+  LL <- matrix(data = NA, nrow = B, ncol = 1)
   
   #cadena
   for (b in 1:B) {
     #actualizar theta
     vtheta <- 1/(n*sig2+1/gamma0)
-    theta <- rnorm(n = 1, mean = (n*ybar/sig2 + mu0/gamma0)*vtheta, sd = sqrt(vtheta))
+    theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0/gamma0)*vtheta, sd = sqrt(vtheta))
     
     #actualizar sigma^2
     sig2 <- 1/rgamma(n = 1, shape = (n+nu0)/2,rate = (nu0+s20+sum((y-theta)^2))/2)
     
-    #if(b >= 1000 &&  (b - 1000) %% 10 == 0){
+    if(b > 1000 &&  (b - 1000) %% 10 == 1){
+      #almacenar valores
+      THETA[b,] <-  c(theta,sig2)
+      #Log-verosimilitud
+      LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
+    }
+  }
+  #fin de la cadena
+  
+  
+  colnames(THETA) <- c("theta","sig2")
+  colnames(LL) <- c("ll")
+  
+  THETA <- THETA[!rowSums(is.na(THETA)) == ncol(THETA), ]
+  LL <- LL[!rowSums(is.na(LL)) == ncol(LL), ]
+  
+  #salida
+  
+  THETA <- as.data.frame(THETA)
+  LL <- as.data.frame(LL)
+  return(list(THETA = THETA,LL = LL))
+}
+
+
+
+
+mod1 <- function(B,y,mu0,gamma0,nu0,s20){
+  #tamaños
+  n <- length(y)
+  ybar <- mean(y)
+  ysum <- sum(y)
+  s2 <- var(y)
+  #valores inicales
+  sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
+  
+  #calculos previos 
+  invgamma0 <- 1/gamma0
+  mu0_gamma0 <- mu0/gamma0
+  nun_2 <- (n + nu0)/2
+  nun <- n+nu0
+  nu0xs20 <- nu0*s20
+  #almacenamiento
+  THETA <- matrix(data = NA, nrow = B, ncol = 2)
+  LL <- matrix(data = NA, nrow = B, ncol = 1)
+  
+  #cadena
+  for (b in 1:B) {
+    #actualizar theta
+    vtheta <- 1/(n/sig2+invgamma0)
+    theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0_gamma0)*vtheta, sd = sqrt(vtheta))
+    
+    #actualizar sigma^2
+    s2n   <- (nu0xs20 + ((n-1)*s2+n*(ybar-theta)^2))/nun
+    sig2 <- 1/rgamma(n = 1, shape = nun_2 , rate = nun*s2n/2)
+    
+    
+    if(b > 1000 &&  (b - 1000) %% 10 == 1){
     #almacenar valores
      THETA[b,] <-  c(theta,sig2)
     #Log-verosimilitud
      LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
-    #}
+    }
   }
+  
+
   #fin de la cadena
   
-  #salida
+
   colnames(THETA) <- c("theta","sig2")
   colnames(LL) <- c("ll")
+  
+  THETA <- THETA[!rowSums(is.na(THETA)) == ncol(THETA), ]
+  LL <- LL[!rowSums(is.na(LL)) == ncol(LL), ]
+  
+  #salida
+  
   THETA <- as.data.frame(THETA)
   LL <- as.data.frame(LL)
   return(list(THETA = THETA,LL = LL))
@@ -117,7 +178,7 @@ s20 <- 50^2
 
 tictoc::tic()
 set.seed(2023)
-chain1 <- mod1(B = 10000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
+chain1 <- mod1(B = 11000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
 tictoc::toc()
 ```
 ```{r}
