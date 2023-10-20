@@ -1,12 +1,20 @@
 ---
 title: "Caso 2"
-author: "Sebastián Lozano, Mauricio Caro"
+author: "Sebastián Lozano, Jherson Guzman"
 date: "7/10/2023"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, include=FALSE}
+Sys.setlocale(category = "LC_COLLATE", locale = "Spanish_Colombia.utf8")
+Sys.setlocale(category = "LC_CTYPE", locale = "Spanish_Colombia.utf8")
+Sys.setlocale(category = "LC_MONETARY", locale = "Spanish_Colombia.utf8")
+Sys.setlocale(category = "LC_NUMERIC", locale = "C")
+Sys.setlocale(category = "LC_TIME", locale = "Spanish_Colombia.utf8")
 ```
 
 
@@ -16,7 +24,7 @@ library(readxl)
 library(dplyr)
 library(ggplot2)
 
-setwd("C:/Bayesiana/Caso2")
+setwd("C:/Users/57300/OneDrive/Documentos/GitHub/BayesianStatsCase2")
 saber11 <- read.csv("SB11_20222.txt", sep = ";", header = TRUE,dec = ".")
 
 ```
@@ -59,6 +67,23 @@ sum(is.na(datos$PUNT_GLOBAL))
 ##Guardamos los datos, para su posterior manipulación.
 save(datos, file = "saber11modificado.rdata")
 
+```
+
+## Punto 1
+```{r}
+library(readxl)
+pob_mon2018 <- read_excel("pobreza monetaria.xls", sheet = 2, range="A16:P40",col_names = TRUE)
+
+pob_mon2018 <- pob_mon2018[,c(1,16)]
+colnames(pob_mon2018) <- c("Departamento","2018")
+
+
+```
+```{r}
+cod <- datos%>%
+  select(ESTU_DEPTO_RESIDE,ESTU_COD_RESIDE_DEPTO)%>%
+  distinct()
+cod <- na.omit(cod)
 ```
 
 
