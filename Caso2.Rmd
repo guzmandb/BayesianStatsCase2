@@ -9,7 +9,7 @@ output: pdf_document
 ```
 
 
-```{r, include=FALSE}
+```{r, include=FALSE,include=FALSE}
 Sys.setlocale(category = "LC_COLLATE", locale = "Spanish_Colombia.utf8")
 Sys.setlocale(category = "LC_CTYPE", locale = "Spanish_Colombia.utf8")
 Sys.setlocale(category = "LC_MONETARY", locale = "Spanish_Colombia.utf8")
@@ -18,25 +18,27 @@ Sys.setlocale(category = "LC_TIME", locale = "Spanish_Colombia.utf8")
 ```
 
 
-```{r cargar datos, y librería}
+```{r cargar datos, y librería,include=FALSE}
 library(readr)
 library(readxl)
 library(dplyr)
 library(ggplot2)
 
 setwd("C:/Users/57300/OneDrive/Documentos/GitHub/BayesianStatsCase2")
-saber11 <- read.csv("SB11_20222.txt", sep = ";", header = TRUE,dec = ".")
+Saber11 <- read_delim("C:/Bayesiana/Caso2/SB11_20222.TXT", 
+  delim = ";", escape_double = FALSE, locale = locale(), 
+  trim_ws = TRUE)
 
 ```
 
-```{r Tratamiento de datos}
+```{r Tratamiento de datos, include=FALSE}
 #Nacionalidad colombiana
 #Residencia en Colombia
 #Proceso de investigación en el Icfes en estado de “Publicar”.
 #Ubicación del colegio no es San Andrés.
-#Sin datos faltantes en la ubicación del colegio por municipio, la ubicación del colegio pordepartamento y el puntaje globa
+#Sin datos faltantes en la ubicación del colegio por municipio, la ubicación del colegio por departamento y el puntaje global
 
-datos <- saber11 %>%
+datos <- Saber11 %>%
   filter(ESTU_NACIONALIDAD == "COLOMBIA"&
            ESTU_PAIS_RESIDE == "COLOMBIA" &
             COLE_COD_DEPTO_UBICACION != 88 &
@@ -70,20 +72,139 @@ save(datos, file = "saber11modificado.rdata")
 ```
 
 ## Punto 1
-```{r}
-library(readxl)
-pob_mon2018 <- read_excel("pobreza monetaria.xls", sheet = 2, range="A16:P40",col_names = TRUE)
+```{r preparacion de la base de datos, include=FALSE}
+combinados <- cbind(datos$COLE_DEPTO_UBICACION,datos$COLE_COD_DEPTO_UBICACION)
+cod <- as.data.frame(unique(combinados))
+cod <- setNames(cod, c("dep", "cod_dep"))
+```
 
-pob_mon2018 <- pob_mon2018[,c(1,16)]
-colnames(pob_mon2018) <- c("Departamento","2018")
+```{r, include=FALSE}
+pobreza_monetaria <- read_excel("C:/Bayesiana/Caso2/pobreza monetaria.xls",sheet = "Pobreza Monetaria (%)", range = "A16:P40")
+
+pobreza_monetaria <- pobreza_monetaria[,c(1,16)]
+pobreza_monetaria <- setNames(pobreza_monetaria,c("dep","IP2018"))
+
+codigos_departamentos <- c("05", "08", "11", "13", "15", "17", "18", "19", "20", "27", "23", "25", "41", "44", "47", "50", "52", "54", "63", "66", "68", "70", "73", "76")
+
+pobreza_monetaria$cod_dep <- codigos_departamentos
+
+punt_muestrales <- datos %>%
+  group_by(COLE_COD_DEPTO_UBICACION) %>%
+  summarise(puntmedio = mean(PUNT_GLOBAL)) %>%
+  as.data.frame()
+
+Mapa <- punt_muestrales %>%
+  full_join(pobreza_monetaria,by = c("COLE_COD_DEPTO_UBICACION"="cod_dep"))%>%
+  select(COLE_COD_DEPTO_UBICACION,dep,IP2018,puntmedio) %>%
+  as.data.frame()
+
+Mapa <- setNames(Mapa,c("cod_dep","dep","IP2018","puntmedio"))
+```
+
+```{r gráficas, include=FALSE}
+library(sf)
+
+deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+
+mapdeptos <- deptoshp %>%
+  left_join(Mapa,by=c("DPTO_CCDGO"="cod_dep")) 
+
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundocol <- mundoshp %>% 
+            filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+str(mundocol)
+```
+
+```{r}
+library(ggplot2)
+box <- st_bbox(mapdeptos)
+
+plot1 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapdeptos, aes(fill = puntmedio), col = "darkgray", linetype = "solid") +
+  coord_sf(xlim = c(box$xmin, box$xmax), ylim = c(box$ymin, box$ymax), expand = FALSE) +
+  geom_sf_text(data = mapdeptos, aes(label = ifelse(puntmedio < quantile(puntmedio, probs = 0.10, na.rm = TRUE), DPTO_CNMBR, "")), col = "black",
+               fontface = "bold", size = 2, fun.geometry = function(x) sf::st_centroid(x)) +
+  labs(x = "Longitud", y = "Latitud", title = "Puntaje medio en las \npruebas Saber Pro \ndepartamento en 2022-II", fill = "Puntaje \nmedio") +
+  scale_fill_gradient(low = "white", high = "#00FFFF", n.breaks = 5)
+
+plot2 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapdeptos, aes(fill = IP2018), col = "darkgray", linetype = "solid") +
+  coord_sf(xlim = c(box$xmin, box$xmax), ylim = c(box$ymin, box$ymax), expand = FALSE) +
+  geom_sf_text(data = mapdeptos, aes(label = ifelse(IP2018 > quantile(IP2018, probs = 0.90, na.rm = TRUE), DPTO_CNMBR, "")), col = "black",
+               fontface = "bold", size = 2, fun.geometry = function(x) sf::st_centroid(x)) +
+  labs(x = "Longitud", y = "Latitud", title = "Índice de pobreza \npor departamento en\n2018", fill = "Índice de \n pobreza" ) +
+  scale_fill_gradient(low = "white", high = "#FFD700", n.breaks = 5)
+
+```
+
+```{r}
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+```{r}
+library(readr)
+library(stringr)
+estadisticas_edu <- read_delim("estadísticas_educación.csv",delim = ",")
+
+estadisticas_edu <- estadisticas_edu %>%
+  filter(AÑO == 2022) %>%
+  select(AÑO,CÓDIGO_MUNICIPIO,MUNICIPIO,CÓDIGO_DEPARTAMENTO,DEPARTAMENTO,COBERTURA_NETA_SECUNDARIA) %>%
+  as.data.frame()
+
+punt_muestrales_mpios <- datos %>%
+  group_by(COLE_COD_MCPIO_UBICACION) %>%
+  summarise(puntmedio = mean(PUNT_GLOBAL)) %>%
+  as.data.frame()
+
+punt_muestrales_mpios$COLE_COD_MCPIO_UBICACION <- sub("^00", "0", punt_muestrales_mpios$COLE_COD_MCPIO_UBICACION)
+
+Mapa_mpios <- punt_muestrales_mpios %>%
+  full_join(estadisticas_edu,by = c("COLE_COD_MCPIO_UBICACION"="CÓDIGO_MUNICIPIO"))%>%
+  as.data.frame()
 
 
 ```
 ```{r}
-cod <- datos%>%
-  select(ESTU_DEPTO_RESIDE,ESTU_COD_RESIDE_DEPTO)%>%
-  distinct()
-cod <- na.omit(cod)
+mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
+
+mapmpios <- mpioshp %>%
+  left_join(Mapa_mpios,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
+
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundocol <- mundoshp %>% 
+            filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+```
+
+```{r}
+box2 <- st_bbox(mapmpios)
+
+plot3 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapmpios, aes(fill = puntmedio), col = "gray", linetype = "solid") +
+  coord_sf(xlim = c(box2$xmin, box2$xmax), ylim = c(box2$ymin, box2$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Puntaje medio en las \npruebas Saber Pro \npor municipio en 2022-II", fill = "Puntaje \nmedio") +
+  scale_fill_gradient(low = "white", high = "#00FFFF", n.breaks = 5)
+
+plot4 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapmpios, aes(fill = COBERTURA_NETA_SECUNDARIA), col = "gray", linetype = "solid") +
+  coord_sf(xlim = c(box2$xmin, box2$xmax), ylim = c(box2$ymin, box2$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Cobertura neta \nsecundaria por municipio \nen 2022", fill = "Cob. \nneta \nsec." ) +
+  scale_fill_gradient(low = "white", high = "#00CD00", n.breaks = 5)
+```
+
+```{r}
+plot3
+plot4
+```
+
+
+```{r}
+grid.arrange(plot3, plot4, ncol = 2)
 ```
 
 
