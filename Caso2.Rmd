@@ -1,34 +1,44 @@
 ---
 title: "Caso 2"
-author: "Sebastián Lozano, Mauricio Caro"
+author: "Sebastián Lozano, Jherson Guzman"
 date: "7/10/2023"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r cargar datos, y librería}
+```{r, include=FALSE,include=FALSE}
+Sys.setlocale(category = "LC_COLLATE", locale = "Spanish_Colombia.utf8")
+Sys.setlocale(category = "LC_CTYPE", locale = "Spanish_Colombia.utf8")
+Sys.setlocale(category = "LC_MONETARY", locale = "Spanish_Colombia.utf8")
+Sys.setlocale(category = "LC_NUMERIC", locale = "C")
+Sys.setlocale(category = "LC_TIME", locale = "Spanish_Colombia.utf8")
+```
+
+
+```{r cargar datos, y librería,include=FALSE}
 library(readr)
 library(readxl)
 library(dplyr)
 library(ggplot2)
 
-setwd("C:/Bayesiana/Caso2")
-saber11 <- read.csv("SB11_20222.txt", sep = ";", header = TRUE,dec = ".")
+setwd("C:/Users/57300/OneDrive/Documentos/GitHub/BayesianStatsCase2")
+Saber11 <- read_delim("C:/Bayesiana/Caso2/SB11_20222.TXT", 
+  delim = ";", escape_double = FALSE, locale = locale(), 
+  trim_ws = TRUE)
 
 ```
 
-```{r Tratamiento de datos}
+```{r Tratamiento de datos, include=FALSE}
 #Nacionalidad colombiana
 #Residencia en Colombia
 #Proceso de investigación en el Icfes en estado de “Publicar”.
 #Ubicación del colegio no es San Andrés.
-#Sin datos faltantes en la ubicación del colegio por municipio, la ubicación del colegio pordepartamento y el puntaje globa
+#Sin datos faltantes en la ubicación del colegio por municipio, la ubicación del colegio por departamento y el puntaje global
 
-datos <- saber11 %>%
+datos <- Saber11 %>%
   filter(ESTU_NACIONALIDAD == "COLOMBIA"&
            ESTU_PAIS_RESIDE == "COLOMBIA" &
             COLE_COD_DEPTO_UBICACION != 88 &
@@ -61,61 +71,148 @@ save(datos, file = "saber11modificado.rdata")
 
 ```
 
+## Punto 1
+```{r preparacion de la base de datos, include=FALSE}
+combinados <- cbind(datos$COLE_DEPTO_UBICACION,datos$COLE_COD_DEPTO_UBICACION)
+cod <- as.data.frame(unique(combinados))
+cod <- setNames(cod, c("dep", "cod_dep"))
+```
+
+```{r, include=FALSE}
+pobreza_monetaria <- read_excel("C:/Bayesiana/Caso2/pobreza monetaria.xls",sheet = "Pobreza Monetaria (%)", range = "A16:P40")
+
+pobreza_monetaria <- pobreza_monetaria[,c(1,16)]
+pobreza_monetaria <- setNames(pobreza_monetaria,c("dep","IP2018"))
+
+codigos_departamentos <- c("05", "08", "11", "13", "15", "17", "18", "19", "20", "27", "23", "25", "41", "44", "47", "50", "52", "54", "63", "66", "68", "70", "73", "76")
+
+pobreza_monetaria$cod_dep <- codigos_departamentos
+
+punt_muestrales <- datos %>%
+  group_by(COLE_COD_DEPTO_UBICACION) %>%
+  summarise(puntmedio = mean(PUNT_GLOBAL)) %>%
+  as.data.frame()
+
+Mapa <- punt_muestrales %>%
+  full_join(pobreza_monetaria,by = c("COLE_COD_DEPTO_UBICACION"="cod_dep"))%>%
+  select(COLE_COD_DEPTO_UBICACION,dep,IP2018,puntmedio) %>%
+  as.data.frame()
+
+Mapa <- setNames(Mapa,c("cod_dep","dep","IP2018","puntmedio"))
+```
+
+```{r gráficas, include=FALSE}
+library(sf)
+
+deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+
+mapdeptos <- deptoshp %>%
+  left_join(Mapa,by=c("DPTO_CCDGO"="cod_dep")) 
+
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundocol <- mundoshp %>% 
+            filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+str(mundocol)
+```
+
+```{r}
+library(ggplot2)
+box <- st_bbox(mapdeptos)
+
+plot1 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapdeptos, aes(fill = puntmedio), col = "darkgray", linetype = "solid") +
+  coord_sf(xlim = c(box$xmin, box$xmax), ylim = c(box$ymin, box$ymax), expand = FALSE) +
+  geom_sf_text(data = mapdeptos, aes(label = ifelse(puntmedio < quantile(puntmedio, probs = 0.10, na.rm = TRUE), DPTO_CNMBR, "")), col = "black",
+               fontface = "bold", size = 2, fun.geometry = function(x) sf::st_centroid(x)) +
+  labs(x = "Longitud", y = "Latitud", title = "Puntaje medio en las \npruebas Saber Pro \ndepartamento en 2022-II", fill = "Puntaje \nmedio") +
+  scale_fill_gradient(low = "white", high = "#00FFFF", n.breaks = 5)
+
+plot2 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapdeptos, aes(fill = IP2018), col = "darkgray", linetype = "solid") +
+  coord_sf(xlim = c(box$xmin, box$xmax), ylim = c(box$ymin, box$ymax), expand = FALSE) +
+  geom_sf_text(data = mapdeptos, aes(label = ifelse(IP2018 > quantile(IP2018, probs = 0.90, na.rm = TRUE), DPTO_CNMBR, "")), col = "black",
+               fontface = "bold", size = 2, fun.geometry = function(x) sf::st_centroid(x)) +
+  labs(x = "Longitud", y = "Latitud", title = "Índice de pobreza \npor departamento en\n2018", fill = "Índice de \n pobreza" ) +
+  scale_fill_gradient(low = "white", high = "#FFD700", n.breaks = 5)
+
+```
+
+```{r}
+library(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+## Punto 2
+
+```{r}
+library(readr)
+library(stringr)
+estadisticas_edu <- read_delim("estadísticas_educación.csv",delim = ",")
+
+estadisticas_edu <- estadisticas_edu %>%
+  filter(AÑO == 2022) %>%
+  select(AÑO,CÓDIGO_MUNICIPIO,MUNICIPIO,CÓDIGO_DEPARTAMENTO,DEPARTAMENTO,COBERTURA_NETA_SECUNDARIA) %>%
+  as.data.frame()
+
+punt_muestrales_mpios <- datos %>%
+  group_by(COLE_COD_MCPIO_UBICACION) %>%
+  summarise(puntmedio = mean(PUNT_GLOBAL)) %>%
+  as.data.frame()
+
+punt_muestrales_mpios$COLE_COD_MCPIO_UBICACION <- sub("^00", "0", punt_muestrales_mpios$COLE_COD_MCPIO_UBICACION)
+
+Mapa_mpios <- punt_muestrales_mpios %>%
+  full_join(estadisticas_edu,by = c("COLE_COD_MCPIO_UBICACION"="CÓDIGO_MUNICIPIO"))%>%
+  as.data.frame()
+
+
+```
+```{r}
+mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
+
+mapmpios <- mpioshp %>%
+  left_join(Mapa_mpios,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
+
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundocol <- mundoshp %>% 
+            filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+```
+
+```{r}
+box2 <- st_bbox(mapmpios)
+
+plot3 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapmpios, aes(fill = puntmedio), col = "gray", linetype = "solid") +
+  coord_sf(xlim = c(box2$xmin, box2$xmax), ylim = c(box2$ymin, box2$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Puntaje medio en las \npruebas Saber Pro \npor municipio en 2022-II", fill = "Puntaje \nmedio") +
+  scale_fill_gradient(low = "white", high = "#00FFFF", n.breaks = 5)
+
+plot4 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapmpios, aes(fill = COBERTURA_NETA_SECUNDARIA), col = "gray", linetype = "solid") +
+  coord_sf(xlim = c(box2$xmin, box2$xmax), ylim = c(box2$ymin, box2$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Cobertura neta \nsecundaria por municipio \nen 2022", fill = "Cob. \nneta \nsec." ) +
+  scale_fill_gradient(low = "white", high = "#00CD00", n.breaks = 5)
+```
+
+
+```{r}
+grid.arrange(plot3, plot4, ncol = 2)
+```
+
 
 ```{r Implementación Modelos}
-mod1beta  <- function(B,y,mu0,gamma0,nu0,s20){
-  #tamaños
-  n <- length(y)
-  ybar <- mean(y)
-  ysum <- sum(y)
-  #valores inicales
-  sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
-  
-  #almacenamiento
-  THETA <- matrix(data = NA, nrow = B, ncol = 2)
-  LL <- matrix(data = NA, nrow = B, ncol = 1)
-  
-  #cadena
-  for (b in 1:B) {
-    #actualizar theta
-    vtheta <- 1/(n*sig2+1/gamma0)
-    theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0/gamma0)*vtheta, sd = sqrt(vtheta))
-    
-    #actualizar sigma^2
-    sig2 <- 1/rgamma(n = 1, shape = (n+nu0)/2,rate = (nu0+s20+sum((y-theta)^2))/2)
-    
-    if(b > 1000 &&  (b - 1000) %% 10 == 1){
-      #almacenar valores
-      THETA[b,] <-  c(theta,sig2)
-      #Log-verosimilitud
-      LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
-    }
-  }
-  #fin de la cadena
-  
-  
-  colnames(THETA) <- c("theta","sig2")
-  colnames(LL) <- c("ll")
-  
-  THETA <- THETA[!rowSums(is.na(THETA)) == ncol(THETA), ]
-  LL <- LL[!rowSums(is.na(LL)) == ncol(LL), ]
-  
-  #salida
-  
-  THETA <- as.data.frame(THETA)
-  LL <- as.data.frame(LL)
-  return(list(THETA = THETA,LL = LL))
-}
-
-
-
-
 mod1 <- function(B,y,mu0,gamma0,nu0,s20){
   #tamaños
   n <- length(y)
   ybar <- mean(y)
   ysum <- sum(y)
   s2 <- var(y)
+  
   #valores inicales
   sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
   
@@ -125,9 +222,11 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
   nun_2 <- (n + nu0)/2
   nun <- n+nu0
   nu0xs20 <- nu0*s20
+  
+  cont <- 1
   #almacenamiento
-  THETA <- matrix(data = NA, nrow = B, ncol = 2)
-  LL <- matrix(data = NA, nrow = B, ncol = 1)
+  THETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = 2)
+  LL <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
   
   #cadena
   for (b in 1:B) {
@@ -136,15 +235,17 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
     theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0_gamma0)*vtheta, sd = sqrt(vtheta))
     
     #actualizar sigma^2
-    s2n   <- (nu0xs20 + ((n-1)*s2+n*(ybar-theta)^2))/nun
-    sig2 <- 1/rgamma(n = 1, shape = nun_2 , rate = nun*s2n/2)
+    s2n   <- nu0xs20+(n-1)*s2+n*(ybar-theta)^2
+    sig2 <- 1/rgamma(n = 1, shape = nun_2 , rate = s2n)
     
     
-    if(b > 1000 &&  (b - 1000) %% 10 == 1){
+    if(b > 1000 &&  (b - 1000) %% 10 == 0){
     #almacenar valores
-     THETA[b,] <-  c(theta,sig2)
+     THETA[cont,] <-  c(theta,sig2)
     #Log-verosimilitud
-     LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
+     LL[cont] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
+     
+     cont <- cont+1
     }
   }
   
@@ -178,12 +279,102 @@ s20 <- 50^2
 
 tictoc::tic()
 set.seed(2023)
-chain1 <- mod1(B = 11000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
+chain1 <- mod1(B = 101000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
 tictoc::toc()
 ```
-```{r}
-plot(chain1$LL,type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
+```{r, graficas cadena 1}
+plot(x = 1:10000, y =  unlist(chain1$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
 plot(chain1$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
 plot(chain1$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+```
+
+```{r}
+mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
+  #tamaño 
+  n <- sum(nj)
+  m <- length(nj)
+  
+  #valores inciales
+  theta <- yb
+  sig2  <- mean(s2)
+  mu    <- mean(theta)
+  tau2  <- var(theta)
+  
+  #calculos previos
+  invg20 <- 1/g20
+  mu0_g20 <- mu0/g20
+  eta0_m <- eta0+m
+  #almacenamiento
+  THETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = m+3)
+  LL    <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
+  
+  cont <- 1
+  #cadena
+  for (b in 1:B) {
+    #actualizar theta
+    vtheta <- 1/(1/tau2 + nj/sig2)
+    theta  <- rnorm(n = m, mean = vtheta*(mu/tau2 + nj*yb/sig2), sd = sqrt(vtheta))
+    
+    #actualizar sigma^2
+    sig2 <- 1/rgamma(n = 1, shape = 0.5*(nu0 + n), rate = 0.5*(nu0*s20 + sum((nj-1)*s2 + nj*(yb - theta)^2)))
+    
+    # actualizar mu
+    vmu <- 1/(invg20 + m/tau2)
+    mu  <- rnorm(n = 1, mean = vmu*(mu0_g20 + m*mean(theta)/tau2), sd = sqrt(vmu)) 
+    
+    # actualizar tau^2
+    tau2 <- 1/rgamma(n = 1, shape = 0.5*(eta0_m), rate = 0.5*(eta0*t20 + (m-1)*var(theta) + m*(mean(theta) - mu)^2))
+    
+    
+    #Almacenar valores
+    if(b > 1000 &&  (b - 1000) %% 10 == 0){
+    #almacenar valores
+     THETA[cont,] <-  c(theta, sig2, mu, tau2)
+    #Log-verosimilitud
+     LL[cont] <- sum(dnorm(x = y, mean = rep(theta, nj), sd = sqrt(sig2), log = T))
+     
+     cont <- cont+1
+    }
+  }
+  #fin de la cadena
+  colnames(THETA) <- c(paste0("theta",1:m), "sig2", "mu", "tau2")
+  colnames(LL) <- c("ll")
+  THETA <- as.data.frame(THETA)
+  LL    <- as.data.frame(LL)
+  return(list(THETA = THETA, LL = LL))
+}
+```
+
+```{r}
+# tratamiento de datos
+# y  : puntaje de los estudiantes (c)
+# Y  : puntaje de los estudiantes (list)
+# g  : identificador secuencial de los departamentos (c)
+# nj : número de estudiantes por departamento (c)
+# yb : promedios por departamento (c)
+# s2 : varianzas por departamento (c)
+y <- datos$PUNT_GLOBAL
+
+Y <- vector(mode = "list", length = m)
+g <- rep(NA, n)
+for (j in 1:m) {
+  idx <- SB11_1$codigo == unique(SB11_1$codigo)[j]
+  g[idx] <- j
+  Y[[j]] <- y[idx]
+}
+# tabla
+estadisticos <- datos %>% 
+  group_by(COLE_COD_MCPIO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION), 
+            nombre = unique(COLE_MCPIO_UBICACION), 
+            nj = n(), 
+            yb = mean(puntaje), 
+            s2 = var(puntaje))
+
+
+tictoc::tic()
+set.seed(2023)
+chain2 <- mod2(B = 101000, nj, yb, s2, mu0, g20, eta0, t20, nu0, s20)
+tictoc::toc()
 ```
 
