@@ -144,6 +144,8 @@ library(gridExtra)
 grid.arrange(plot1, plot2, ncol = 2)
 ```
 
+## Punto 2
+
 ```{r}
 library(readr)
 library(stringr)
@@ -197,11 +199,6 @@ plot4 <- ggplot() +
   scale_fill_gradient(low = "white", high = "#00CD00", n.breaks = 5)
 ```
 
-```{r}
-plot3
-plot4
-```
-
 
 ```{r}
 grid.arrange(plot3, plot4, ncol = 2)
@@ -209,59 +206,13 @@ grid.arrange(plot3, plot4, ncol = 2)
 
 
 ```{r Implementación Modelos}
-mod1beta  <- function(B,y,mu0,gamma0,nu0,s20){
-  #tamaños
-  n <- length(y)
-  ybar <- mean(y)
-  ysum <- sum(y)
-  #valores inicales
-  sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
-  
-  #almacenamiento
-  THETA <- matrix(data = NA, nrow = B, ncol = 2)
-  LL <- matrix(data = NA, nrow = B, ncol = 1)
-  
-  #cadena
-  for (b in 1:B) {
-    #actualizar theta
-    vtheta <- 1/(n*sig2+1/gamma0)
-    theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0/gamma0)*vtheta, sd = sqrt(vtheta))
-    
-    #actualizar sigma^2
-    sig2 <- 1/rgamma(n = 1, shape = (n+nu0)/2,rate = (nu0+s20+sum((y-theta)^2))/2)
-    
-    if(b > 1000 &&  (b - 1000) %% 10 == 1){
-      #almacenar valores
-      THETA[b,] <-  c(theta,sig2)
-      #Log-verosimilitud
-      LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
-    }
-  }
-  #fin de la cadena
-  
-  
-  colnames(THETA) <- c("theta","sig2")
-  colnames(LL) <- c("ll")
-  
-  THETA <- THETA[!rowSums(is.na(THETA)) == ncol(THETA), ]
-  LL <- LL[!rowSums(is.na(LL)) == ncol(LL), ]
-  
-  #salida
-  
-  THETA <- as.data.frame(THETA)
-  LL <- as.data.frame(LL)
-  return(list(THETA = THETA,LL = LL))
-}
-
-
-
-
 mod1 <- function(B,y,mu0,gamma0,nu0,s20){
   #tamaños
   n <- length(y)
   ybar <- mean(y)
   ysum <- sum(y)
   s2 <- var(y)
+  
   #valores inicales
   sig2 <- 1/rgamma(n = 1,shape = nu0/2,rate = (nu0*s20)/2)
   
@@ -271,9 +222,11 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
   nun_2 <- (n + nu0)/2
   nun <- n+nu0
   nu0xs20 <- nu0*s20
+  
+  cont <- 1
   #almacenamiento
-  THETA <- matrix(data = NA, nrow = B, ncol = 2)
-  LL <- matrix(data = NA, nrow = B, ncol = 1)
+  THETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = 2)
+  LL <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
   
   #cadena
   for (b in 1:B) {
@@ -282,15 +235,17 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
     theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0_gamma0)*vtheta, sd = sqrt(vtheta))
     
     #actualizar sigma^2
-    s2n   <- (nu0xs20 + ((n-1)*s2+n*(ybar-theta)^2))/nun
-    sig2 <- 1/rgamma(n = 1, shape = nun_2 , rate = nun*s2n/2)
+    s2n   <- nu0xs20+(n-1)*s2+n*(ybar-theta)^2
+    sig2 <- 1/rgamma(n = 1, shape = nun_2 , rate = s2n)
     
     
-    if(b > 1000 &&  (b - 1000) %% 10 == 1){
+    if(b > 1000 &&  (b - 1000) %% 10 == 0){
     #almacenar valores
-     THETA[b,] <-  c(theta,sig2)
+     THETA[cont,] <-  c(theta,sig2)
     #Log-verosimilitud
-     LL[b] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
+     LL[cont] <- sum(dnorm(x = y, mean = theta, sd = sqrt(sig2),log = TRUE))
+     
+     cont <- cont+1
     }
   }
   
@@ -324,12 +279,102 @@ s20 <- 50^2
 
 tictoc::tic()
 set.seed(2023)
-chain1 <- mod1(B = 11000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
+chain1 <- mod1(B = 101000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
 tictoc::toc()
 ```
-```{r}
-plot(chain1$LL,type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
+```{r, graficas cadena 1}
+plot(x = 1:10000, y =  unlist(chain1$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
 plot(chain1$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
 plot(chain1$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+```
+
+```{r}
+mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
+  #tamaño 
+  n <- sum(nj)
+  m <- length(nj)
+  
+  #valores inciales
+  theta <- yb
+  sig2  <- mean(s2)
+  mu    <- mean(theta)
+  tau2  <- var(theta)
+  
+  #calculos previos
+  invg20 <- 1/g20
+  mu0_g20 <- mu0/g20
+  eta0_m <- eta0+m
+  #almacenamiento
+  THETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = m+3)
+  LL    <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
+  
+  cont <- 1
+  #cadena
+  for (b in 1:B) {
+    #actualizar theta
+    vtheta <- 1/(1/tau2 + nj/sig2)
+    theta  <- rnorm(n = m, mean = vtheta*(mu/tau2 + nj*yb/sig2), sd = sqrt(vtheta))
+    
+    #actualizar sigma^2
+    sig2 <- 1/rgamma(n = 1, shape = 0.5*(nu0 + n), rate = 0.5*(nu0*s20 + sum((nj-1)*s2 + nj*(yb - theta)^2)))
+    
+    # actualizar mu
+    vmu <- 1/(invg20 + m/tau2)
+    mu  <- rnorm(n = 1, mean = vmu*(mu0_g20 + m*mean(theta)/tau2), sd = sqrt(vmu)) 
+    
+    # actualizar tau^2
+    tau2 <- 1/rgamma(n = 1, shape = 0.5*(eta0_m), rate = 0.5*(eta0*t20 + (m-1)*var(theta) + m*(mean(theta) - mu)^2))
+    
+    
+    #Almacenar valores
+    if(b > 1000 &&  (b - 1000) %% 10 == 0){
+    #almacenar valores
+     THETA[cont,] <-  c(theta, sig2, mu, tau2)
+    #Log-verosimilitud
+     LL[cont] <- sum(dnorm(x = y, mean = rep(theta, nj), sd = sqrt(sig2), log = T))
+     
+     cont <- cont+1
+    }
+  }
+  #fin de la cadena
+  colnames(THETA) <- c(paste0("theta",1:m), "sig2", "mu", "tau2")
+  colnames(LL) <- c("ll")
+  THETA <- as.data.frame(THETA)
+  LL    <- as.data.frame(LL)
+  return(list(THETA = THETA, LL = LL))
+}
+```
+
+```{r}
+# tratamiento de datos
+# y  : puntaje de los estudiantes (c)
+# Y  : puntaje de los estudiantes (list)
+# g  : identificador secuencial de los departamentos (c)
+# nj : número de estudiantes por departamento (c)
+# yb : promedios por departamento (c)
+# s2 : varianzas por departamento (c)
+y <- datos$PUNT_GLOBAL
+
+Y <- vector(mode = "list", length = m)
+g <- rep(NA, n)
+for (j in 1:m) {
+  idx <- SB11_1$codigo == unique(SB11_1$codigo)[j]
+  g[idx] <- j
+  Y[[j]] <- y[idx]
+}
+# tabla
+estadisticos <- datos %>% 
+  group_by(COLE_COD_MCPIO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION), 
+            nombre = unique(COLE_MCPIO_UBICACION), 
+            nj = n(), 
+            yb = mean(puntaje), 
+            s2 = var(puntaje))
+
+
+tictoc::tic()
+set.seed(2023)
+chain2 <- mod2(B = 101000, nj, yb, s2, mu0, g20, eta0, t20, nu0, s20)
+tictoc::toc()
 ```
 
