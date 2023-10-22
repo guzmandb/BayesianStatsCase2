@@ -24,7 +24,7 @@ library(readxl)
 library(dplyr)
 library(ggplot2)
 
-setwd("C:/Users/57300/OneDrive/Documentos/GitHub/BayesianStatsCase2")
+#setwd("C:/Users/57300/OneDrive/Documentos/GitHub/BayesianStatsCase2")
 Saber11 <- read_delim("C:/Bayesiana/Caso2/SB11_20222.TXT", 
   delim = ";", escape_double = FALSE, locale = locale(), 
   trim_ws = TRUE)
@@ -353,28 +353,58 @@ mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
 # nj : número de estudiantes por departamento (c)
 # yb : promedios por departamento (c)
 # s2 : varianzas por departamento (c)
+(m <- length(table(datos$COLE_COD_MCPIO_UBICACION)))
+
 y <- datos$PUNT_GLOBAL
 
 Y <- vector(mode = "list", length = m)
-g <- rep(NA, n)
-for (j in 1:m) {
-  idx <- SB11_1$codigo == unique(SB11_1$codigo)[j]
-  g[idx] <- j
-  Y[[j]] <- y[idx]
-}
+
+#for (j in 1:m) {
+#  idx <- datos$COLE_COD_MCPIO_UBICACION == unique(datos$COLE_COD_MCPIO_UBICACION)[j]
+#  g[idx] <- j
+#  Y[[j]] <- y[idx]
+#}
 # tabla
 estadisticos <- datos %>% 
   group_by(COLE_COD_MCPIO_UBICACION) %>% 
   summarise(codigo = unique(COLE_COD_MCPIO_UBICACION), 
             nombre = unique(COLE_MCPIO_UBICACION), 
             nj = n(), 
-            yb = mean(puntaje), 
-            s2 = var(puntaje))
+            yb = mean(PUNT_GLOBAL), 
+            s2 = var(PUNT_GLOBAL))
 
+nj <- estadisticos$nj
+yb <- estadisticos$yb
+s2 <- estadisticos$s2
+
+# hiperparámetros
+mu0  <- 250 
+g20  <- 50^2
+eta0 <- 1
+t20  <- 50^2
+nu0  <- 1
+s20  <- 50^2
 
 tictoc::tic()
 set.seed(2023)
 chain2 <- mod2(B = 101000, nj, yb, s2, mu0, g20, eta0, t20, nu0, s20)
 tictoc::toc()
 ```
+```{r, graficas cadena 1}
+plot(x = 1:10000, y =  unlist(chain2$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
+plot(chain2$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
+plot(chain2$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_2))
+plot(chain2$THETA[,m+1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+plot(chain2$THETA[,m+2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
+plot(chain2$THETA[,m+3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau^2))
+```
+
+```{r}
+class(chain1)
+```
+```{r cadena3}
+
+```
+
+
 
