@@ -6,6 +6,7 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
+setwd("C:/Bayesiana/Caso2")
 ```
 
 
@@ -353,7 +354,7 @@ mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
 # nj : número de estudiantes por departamento (c)
 # yb : promedios por departamento (c)
 # s2 : varianzas por departamento (c)
-(m <- length(table(datos$COLE_COD_MCPIO_UBICACION)))
+(m <- length(table(datos$COLE_COD_DEPTO_UBICACION)))
 
 y <- datos$PUNT_GLOBAL
 
@@ -366,9 +367,9 @@ Y <- vector(mode = "list", length = m)
 #}
 # tabla
 estadisticos <- datos %>% 
-  group_by(COLE_COD_MCPIO_UBICACION) %>% 
-  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION), 
-            nombre = unique(COLE_MCPIO_UBICACION), 
+  group_by(COLE_COD_DEPTO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_DEPTO_UBICACION), 
+            nombre = unique(COLE_DEPTO_UBICACION), 
             nj = n(), 
             yb = mean(PUNT_GLOBAL), 
             s2 = var(PUNT_GLOBAL))
@@ -390,13 +391,18 @@ set.seed(2023)
 chain2 <- mod2(B = 101000, nj, yb, s2, mu0, g20, eta0, t20, nu0, s20)
 tictoc::toc()
 ```
-```{r, graficas cadena 1}
+
+```{r, graficas cadena 2}
 plot(x = 1:10000, y =  unlist(chain2$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
-plot(chain2$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
+plot(chain2$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_1))
 plot(chain2$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_2))
 plot(chain2$THETA[,m+1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
 plot(chain2$THETA[,m+2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
 plot(chain2$THETA[,m+3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau^2))
+```
+
+```{r}
+save(chain2,file="chain2.Rdata")
 ```
 
 
@@ -417,7 +423,7 @@ mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
   invg20 <- 1/g20
   mu0_g20 <- mu0/g20
   eta0_m <- eta0+m
-  etaxt20 <- eta*t20 
+  etaxt20 <- eta0*t20 
   a <- (al0 + m*nu)*0.5
   
   cont <- 1
@@ -450,6 +456,7 @@ mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
     THETA[cont,] <- c(theta, sig2, mu, tau2, ups2)
     # log-verosimilitud
     LL[cont] <- sum(dnorm(x = y, mean = rep(theta, nj), sd = sqrt(rep(sig2, nj)), log = T))
+    cont <- cont+1
     }
   }
   
@@ -465,10 +472,16 @@ mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
 
 
 ```{r cadena3}
+(m <- length(table(datos$COLE_COD_DEPTO_UBICACION)))
+
+y <- datos$PUNT_GLOBAL
+
+Y <- vector(mode = "list", length = m)
+
 estadisticos <- datos %>% 
-  group_by(COLE_COD_MCPIO_UBICACION) %>% 
-  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION), 
-            nombre = unique(COLE_MCPIO_UBICACION), 
+  group_by(COLE_COD_DEPTO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_DEPTO_UBICACION), 
+            nombre = unique(COLE_DEPTO_UBICACION), 
             nj = n(), 
             yb = mean(PUNT_GLOBAL), 
             s2 = var(PUNT_GLOBAL))
@@ -493,5 +506,17 @@ tictoc::toc()
 
 ```
 
-
+```{r, graficas cadena 3}
+plot(x = 1:10000, y =  unlist(chain3$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
+plot(chain3$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_1))
+plot(chain3$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_2))
+plot(chain3$THETA[,m+1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+plot(chain3$THETA[,m+2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma_2))
+plot(chain3$THETA$tau2,type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau))
+plot(chain3$THETA$mu,type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
+plot(chain3$THETA$ups2,type = "p", pch = ".", xlab = "Iteración", ylab = expression(ups))
+```
+```{r}
+save(chain3,file="chain3.Rdata")
+```
 
