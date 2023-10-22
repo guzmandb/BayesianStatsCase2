@@ -67,7 +67,7 @@ sum(is.na(datos$COLE_COD_DEPTO_UBICACION))
 sum(is.na(datos$PUNT_GLOBAL))
 
 ##Guardamos los datos, para su posterior manipulación.
-save(datos, file = "saber11modificado.rdata")
+#save(datos, file = "saber11modificado.rdata")
 
 ```
 
@@ -399,10 +399,97 @@ plot(chain2$THETA[,m+2],type = "p", pch = ".", xlab = "Iteración", ylab = expre
 plot(chain2$THETA[,m+3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau^2))
 ```
 
-```{r}
-class(chain1)
-```
+
 ```{r cadena3}
+mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
+  # tamaños
+  n <- sum(nj)
+  m <- length(nj)
+  
+  # valores iniciales
+  theta <- yb
+  sig2  <- s2  # sigma_j^2
+  mu    <- mean(theta)
+  tau2  <- var(theta)
+  ups2  <- rgamma(n = 1,shape = al0*0.5,rate = be0*0.5)  # sigma^2
+  
+  #calculos previos
+  invg20 <- 1/g20
+  mu0_g20 <- mu0/g20
+  eta0_m <- eta0+m
+  etaxt20 <- eta*t20 
+  a <- (al0 + m*nu)*0.5
+  
+  cont <- 1
+  # almacenamiento
+  THETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = 2*m+3)
+  LL    <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
+  
+  # cadena
+  for (b in 1:B) {
+    # actualizar theta
+    vtheta <- 1/(1/tau2 + nj/sig2)
+    theta  <- rnorm(n = m, mean = vtheta*(mu/tau2 + nj*yb/sig2), sd = sqrt(vtheta))
+    
+    # actualizar sigma_j^2
+    sig2 <- 1/rgamma(n = m, shape = 0.5*(nu + nj), rate = 0.5*(nu*ups2 + (nj-1)*s2 + nj*(yb - theta)^2))
+    
+    # actualizar mu
+    vmu <- 1/(invg20 + m/tau2)
+    mu  <- rnorm(n = 1, mean = vmu*(mu0_g20 + m*mean(theta)/tau2), sd = sqrt(vmu))
+    
+    # actualizar tau2
+    tau2 <- 1/rgamma(n = 1, shape = 0.5*(eta0_m), rate = 0.5*(etaxt20 + (m-1)*var(theta) + m*(mean(theta) - mu)^2))
+    
+    # actualizar sigma^2
+    ups2 <- rgamma(n = 1, shape = a, rate = (be0 + nu*sum(1/sig2))*0.5)
+    
+
+    # almacenar
+    if(b > 1000 && (b - 1000) %% 10 == 0){
+    THETA[cont,] <- c(theta, sig2, mu, tau2, ups2)
+    # log-verosimilitud
+    LL[cont] <- sum(dnorm(x = y, mean = rep(theta, nj), sd = sqrt(rep(sig2, nj)), log = T))
+    }
+  }
+  
+  # fin de la cadena
+  # salida
+  colnames(THETA) <- c(paste0("theta", 1:m), paste0("sig2", 1:m), "mu", "tau2", "ups2")
+  colnames(LL) <- c("ll")
+  THETA <- as.data.frame(THETA)
+  LL    <- as.data.frame(LL)
+  return(list(THETA = THETA, LL = LL))
+}
+```
+
+
+```{r cadena3}
+estadisticos <- datos %>% 
+  group_by(COLE_COD_MCPIO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION), 
+            nombre = unique(COLE_MCPIO_UBICACION), 
+            nj = n(), 
+            yb = mean(PUNT_GLOBAL), 
+            s2 = var(PUNT_GLOBAL))
+
+nj <- estadisticos$nj
+yb <- estadisticos$yb
+s2 <- estadisticos$s2
+
+# hiperparámetros
+  mu0  <- 250 
+  g20  <- 50^2
+  eta0 <- 1  
+  t20  <- 50^2
+  nu <- 1
+  al0  <- 1
+  be0  <- 1/50^2 
+
+tictoc::tic()
+set.seed(2023)
+chain3 <- mod3(B = 101000, nj, yb, s2, mu0, g20, eta0, t20,al0,be0,nu)
+tictoc::toc()
 
 ```
 
