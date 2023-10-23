@@ -516,7 +516,163 @@ plot(chain3$THETA$tau2,type = "p", pch = ".", xlab = "Iteración", ylab = expres
 plot(chain3$THETA$mu,type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
 plot(chain3$THETA$ups2,type = "p", pch = ".", xlab = "Iteración", ylab = expression(ups))
 ```
+
+
 ```{r}
 save(chain3,file="chain3.Rdata")
 ```
+
+```{r}
+mod4 <- function(B,njk,ybk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,eta0,tau20,nu0,s20){
+  
+#tamaños 
+  N <- sum(njk)
+  lennjk <- length(njk)
+  sumnk <- sum(nk)
+  m <- length(nk)
+
+#valores inciales
+  theta <- rnorm(n = m, mean = ybd, sd = sqrt(s2d))
+  k2 <- 1/rgamma(n = 1, shape = xi0*0.5,rate = (xi0*k20)*0.5)
+  mu <- rnorm(n = 1, mean = mu0,sd = sqrt(s20))
+  tau2 <- 1/rgamma(n = 1, shape = eta0*0.5,rate = (eta0*tau20)*0.5)
+  sig2 <- 1/rgamma(n=1, shape = nu0*0.5,rate = (nu0*s20)*0.5)
+  
+#calculos previos
+  xi0xk20  <- xi0*k20
+  N_xi0 <- N+xi0
+  invg20 <- 1/g20
+  mu0_g20 <- mu0/g20
+  m_eta0_2 <- 0.5*(m+eta0)
+  eta0xtau20 <- eta0*tau20
+  sumnk_nu0 <- sumnk+nu0 
+  nu0xs20 <- nu0*s20
+  
+  start <- 1
+  end <- 0
+  cont <- 1
+  
+  #Almacenamiento
+  ZETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = lennjk)
+  THETA <- matrix(data = NA,nrow = (B-1000)/10, ncol = m)
+  OTROS <- matrix(data = NA, nrow = (B-1000)/10,ncol =  4)
+  LL    <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
+  
+  for (b in 1:B) {
+    #actualizar zeta
+    vzeta <- 1/(njk/k2 + 1/sig2)
+    zeta <- rnorm(n = lennjk ,mean = vzeta*((njk*ybk)/k2+rep(theta,nk)/sig2),sd = sqrt(vzeta))
+    
+    zetabar <- tapply(zeta, rep(1:m, times = nk), FUN = mean)
+    vzeta <- tapply(zeta, rep(1:m, times = nk), FUN = var)
+    #actualizar kappa^2
+    k2 <- 1/rgamma(n = 1, shape = 0.5*(N_xi0),rate = 0.5*(xi0xk20 + sum((njk-1)*s2jk+njk*(ybjk+zeta)^2)))
+    
+    #actualizar theta
+    vtheta <- 1/((nk/sig2+1/tau2))
+    theta <- rnorm(n = m,mean = vtheta*((nk*zetabar)/sig2+mu/tau2),sd=sqrt(vtheta))
+    
+    thetabar <- mean(theta)
+    stheta <- var(theta)
+    
+    #actualizar mu 
+    vmu <- 1/(m/tau2 + invg20)
+    mu <- rnorm(n=1, mean = vmu*((m*thetabar)/tau2+mu0_g20), sd = sqrt(vmu))
+    
+    #actualizar tau^2
+    tau2 <- 1/rgamma(n = 1,shape = m_eta0_2,rate = 0.5*(eta0xtau20+(m-1)*stheta+m*(thetabar-mu)^2))
+    
+    #actualizar sig2
+    sig2 <- 1/rgamma(n = 1,shape = sumnk_nu0,rate = 0.5*(nu0xs20+sum((nk-1)*vzeta + nk*(zetabar-theta)^2)))
+    
+    if((b - 1000) %% 10 == 0 && b > 1000){
+      ZETA[cont,] <- zeta
+      THETA[cont,] <- theta
+      OTROS[cont,] <- c(k2,mu,tau2,sig2)
+      LL[cont] <- sum(dnorm(x = y, mean = rep(zeta, njk), sd = sqrt(k2), log = T))
+      cont <- cont+1
+    }
+  }
+  #colnames(THETA) <- c(paste0("theta", 1:m), paste0("sig2", 1:m), "mu", "tau2", "ups2")
+  colnames(ZETA) <- c(paste0("zeta",1:lennjk))
+  colnames(THETA) <- c(paste0("theta",1:m))
+  colnames(OTROS) <- c("k2","mu","tau2","sig2")
+  colnames(LL) <- c("ll")
+  
+  ZETA <- as.data.frame(ZETA)
+  THETA <- as.data.frame(THETA)
+  OTROS <- as.data.frame(OTROS)
+  LL <- as.data.frame(LL)
+  
+  
+  return(list(ZETA = ZETA,THETA = THETA,OTROS = OTROS,LL = LL))
+}
+```
+
+
+```{r}
+estadisticas_mpios <- datos %>%
+  mutate(COLE_COD_MCPIO_UBICACION = ifelse(substr(COLE_COD_MCPIO_UBICACION, 1, 1) == "0", substr(COLE_COD_MCPIO_UBICACION, 2, nchar(COLE_COD_MCPIO_UBICACION)), COLE_COD_MCPIO_UBICACION)) %>%
+  group_by(COLE_COD_MCPIO_UBICACION) %>%
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION),
+            nombre = unique(COLE_MCPIO_UBICACION),
+            njk = n(),
+            ybjk = mean(PUNT_GLOBAL),
+            s2jk = var(PUNT_GLOBAL)) %>%
+  arrange(codigo)
+
+estadisticas_mpios <- estadisticas_mpios %>%
+  mutate(COD_DEPARTAMENTO = substr(COLE_COD_MCPIO_UBICACION, 1, 2))
+
+conteo_deptos <- estadisticas_mpios %>%
+  group_by(COD_DEPARTAMENTO) %>%
+  summarise(codigo = unique(COD_DEPARTAMENTO),
+            nk = n())
+
+nk <- conteo_deptos$nk
+
+estadisticas_deptos <- datos %>%
+  group_by(COLE_COD_DEPTO_UBICACION) %>%
+  summarise(codigo = unique(COLE_COD_DEPTO_UBICACION),
+            nombre = unique(COLE_DEPTO_UBICACION),
+            nk = n(),
+            ybk = mean(PUNT_GLOBAL),
+            s2k = var(PUNT_GLOBAL))%>%
+  arrange(COLE_COD_DEPTO_UBICACION)
+
+
+njk <- estadisticas_mpios$njk
+ybjk <- estadisticas_mpios$ybjk
+s2jk <- estadisticas_mpios$s2jk
+
+
+ybd <- estadisticas_deptos$ybk
+s2d <- estadisticas_deptos$s2k
+
+#B,njk,ybk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,eta0,tau20,nu0,s20
+
+#hiperparametros
+B <- 101000
+xi0 <- 1
+k20 <- 50^2
+mu0 <- 250
+g20 <- 50^2
+eta0 <- 1
+tau20 <- 50^2
+nu0 <- 1
+s20 <- 50^2
+
+```
+
+```{r}
+tictoc::tic()
+set.seed(2023)
+chain4 <- mod4(B,njk,ybk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,eta0,tau20,nu0,s20)
+tictoc::toc()
+```
+
+
+
+
+
 
