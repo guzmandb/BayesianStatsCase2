@@ -236,8 +236,8 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
     theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0_gamma0)*vtheta, sd = sqrt(vtheta))
     
     #actualizar sigma^2
-    s2n   <- nu0xs20+(n-1)*s2+n*(ybar-theta)^2
-    sig2 <- 1/rgamma(n = 1, shape = nun_2 , rate = s2n)
+    
+    sig2 <- 1/rgamma(n = 1, shape =  nun_2, rate = 0.5*(nu0xs20+(n-1)*s2+n*(ybar-theta)^2))
     
     
     if(b > 1000 &&  (b - 1000) %% 10 == 0){
@@ -884,7 +884,7 @@ plot(chain5$ZETA[,356],type = "p", pch = ".", xlab = "Iteración", ylab = expres
 
 plot(chain5$THETA[,14],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
 plot(chain5$THETA[,15],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
-plot(chain5$THETA[,14],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
+plot(chain5$THETA[,3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
 
 
 plot(chain5$SIG2[,3],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma))
@@ -922,6 +922,67 @@ round(summary(apply(X = chain5$SIG2, MARGIN = 2, FUN = sd)/sqrt(neffsig2_5)), 3)
 round(summary(apply(X = chain5$ZETA, MARGIN = 2, FUN = sd)/sqrt(neffzeta_5)), 3)
 ```
 ```{r}
+round(summary(apply(X = chain5$SIG2, MARGIN = 2, FUN = sd)/sqrt(neffsig2_5)), 3)
+```
+
+
+
+
+```{r}
 save(chain5,file = "chain5.Rdata")
+```
+
+
+```{r}
+(neff_theta_1 <- coda::effectiveSize(chain1$THETA[,1]))
+(neff_sig2_1 <- coda::effectiveSize(chain1$THETA[,2]))
+
+
+sd(chain1$THETA[,1]/sqrt(neff_theta_1))
+sd(chain1$THETA[,2]/sqrt(neff_theta_1))
+
+#round(apply(X = chain1$THETA[,1], MARGIN = 2, FUN = sd)/sqrt(neff_theta_1), 3)
+#round(apply(X = chain1$THETA[,2], MARGIN = 2, FUN = sd)/sqrt(neff_sig2_1), 3)
+```
+
+
+```{r Punto 4}
+par(mfrow = c(2, 2))
+
+# Gráfico 1 (negro)
+plot(x = 1:10000, y = unlist(chain2$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "black", ylim = c(-2873285, -2836923))
+title("M2")
+
+# Gráfico 2 (rojo)
+plot(x = 1:10000, y = unlist(chain3$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "red",ylim = c(-2873285, -2836923))
+title("M3")
+
+# Gráfico 3 (azul)
+plot(x = 1:10000, y = unlist(chain4$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "blue",ylim = c(-2873285, -2836923))
+title("M4")
+
+# Gráfico 4 (verde)
+plot(x = 1:10000, y = unlist(chain5$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "green",ylim = c(-2873285, -2836923))
+title("M5")
+
+
+
+
+```
+
+```{r  Punto 6}
+
+vecmu <- cbind(chain1$THETA[,1],chain2$THETA$mu,chain3$THETA$mu,chain4$OTROS$mu,chain5$OTROS$mu)
+
+medias <- apply(vecmu, MARGIN = 2, mean)
+medias <- round(medias, digits = 3)
+
+ICs <- apply(vecmu, MARGIN = 2, function(x) quantile(x, c(0.025, 0.975)))
+ICs <- round(ICs, digits = 3)
+
+punto_6 <- rbind(medias,ICs)
+
+`colnames<-`(punto_6,c("M1","M2","M3","M4","M5"))
+print(punto_6)
 ```
 
