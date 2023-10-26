@@ -104,13 +104,14 @@ Mapa <- setNames(Mapa,c("cod_dep","dep","IP2018","puntmedio"))
 
 ```{r gráficas, include=FALSE}
 library(sf)
+setwd("C:/Bayesiana/Caso2/misc")
 
-deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+deptoshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_DPTO_POLITICO.shp",quiet=TRUE) 
 
 mapdeptos <- deptoshp %>%
   left_join(Mapa,by=c("DPTO_CCDGO"="cod_dep")) 
 
-mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 str(mundocol)
@@ -150,9 +151,9 @@ grid.arrange(plot1, plot2, ncol = 2)
 ```{r}
 library(readr)
 library(stringr)
-estadisticas_edu <- read_delim("estadísticas_educación.csv",delim = ",")
+estadisticas_edu <- read_delim("C:/Bayesiana/Caso2/estadísticas_educación.csv",delim = ",")
 
-estadisticas_edu <- estadisticas_edu %>%
+  estadisticas_edu <- estadisticas_edu %>%
   filter(AÑO == 2022) %>%
   select(AÑO,CÓDIGO_MUNICIPIO,MUNICIPIO,CÓDIGO_DEPARTAMENTO,DEPARTAMENTO,COBERTURA_NETA_SECUNDARIA) %>%
   as.data.frame()
@@ -170,31 +171,33 @@ Mapa_mpios <- punt_muestrales_mpios %>%
 
 
 ```
+
+
 ```{r}
-mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_MPIO_POLITICO.shp",quiet=TRUE) 
 mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
 
 mapmpios <- mpioshp %>%
   left_join(Mapa_mpios,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
 
-mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 ```
 
 ```{r}
 box2 <- st_bbox(mapmpios)
-
 plot3 <- ggplot() +
   geom_sf(data = mundocol) +
-  geom_sf(data = mapmpios, aes(fill = puntmedio), col = "gray", linetype = "solid") +
+  geom_sf(data = mapmpios, aes(fill = puntmedio), col = "gray", linetype = "solid", size=0.001) +
   coord_sf(xlim = c(box2$xmin, box2$xmax), ylim = c(box2$ymin, box2$ymax), expand = FALSE) +
   labs(x = "Longitud", y = "Latitud", title = "Puntaje medio en las \npruebas Saber Pro \npor municipio en 2022-II", fill = "Puntaje \nmedio") +
   scale_fill_gradient(low = "white", high = "#00FFFF", n.breaks = 5)
 
+
 plot4 <- ggplot() +
   geom_sf(data = mundocol) +
-  geom_sf(data = mapmpios, aes(fill = COBERTURA_NETA_SECUNDARIA), col = "gray", linetype = "solid") +
+  geom_sf(data = mapmpios, aes(fill = COBERTURA_NETA_SECUNDARIA), col = "gray", linetype =  "solid", size=0.001) +
   coord_sf(xlim = c(box2$xmin, box2$xmax), ylim = c(box2$ymin, box2$ymax), expand = FALSE) +
   labs(x = "Longitud", y = "Latitud", title = "Cobertura neta \nsecundaria por municipio \nen 2022", fill = "Cob. \nneta \nsec." ) +
   scale_fill_gradient(low = "white", high = "#00CD00", n.breaks = 5)
@@ -702,6 +705,12 @@ neffzeta <- coda::effectiveSize(chain4$ZETA)
 ```{r}
 round(neffotros,digits = 3)
 round(apply(X = chain4$OTROS, MARGIN = 2, FUN = sd)/sqrt(neffotros), 3)
+
+library(foreign)
+library(xtable)
+library(stargazer)
+#xtable(newobject2, type = "latex", file = "filename2.tex")
+
 ```
 
 
@@ -965,10 +974,78 @@ title("M4")
 plot(x = 1:10000, y = unlist(chain5$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "green",ylim = c(-2873285, -2836923))
 title("M5")
 
+```
+
+```{r Punto 5}
+nj <- datos %>%
+  group_by(COLE_COD_DEPTO_UBICACION) %>%
+  summarise(nj = n()) %>%
+  pull(nj)
+m <- length(nj)
+
+##DIC
+
+#M1
+LP1 <- as.numeric(chain1$LL$LL)
+thetahat_1 <- mean(chain1$THETA[,1])
+sigma2hat_1 <- mean(chain1$THETA[,2])
+lpyth_m1 <- sum(dnorm(x = y,mean = thetahat_1,sd = sqrt(sigma2hat_1),log = T))
+pDIC_m1 <- 2*(lpyth_m1-mean(LP1))
+dic_m1 <- -2*lpyth_m1 + 2*pDIC_m1
+
+#M2 
+LP2 <- as.numeric(chain2$LL$ll)
+thetahat_2 <- colMeans(chain2$THETA[,1:m])
+sigma2hat_2 <- mean(chain2$THETA$sig2)
+lpyth_m2 <- sum(dnorm(x = y,mean =rep(thetahat_2,nj),sd = sqrt(sigma2hat_2),log = T))
+pDIC_m2 <- 2*(lpyth_m2-mean(LP2))
+dic_m2 <- -2*lpyth_m2 + 2*pDIC_m2
+
+#M3
+LP3 <- as.numeric(chain3$LL$ll)
+thetahat_3 <- colMeans(chain3$THETA[,1:m])
+sigma2hat_3 <- colMeans(chain3$THETA[,(m+1):(m*2)])
+lpyth_m3 <- sum(dnorm(x = y,mean =rep(thetahat_3,nj),sd = sqrt(rep(sigma2hat_3,nj)),log = T))
+pDIC_m3 <- 2*(lpyth_m3-mean(LP3))
+dic_m3 <- -2*lpyth_m3 + 2*pDIC_m3
+
+
+#M4
+LP4 <- as.numeric(chain4$LL$ll)
+zetahat_4 <- colMeans(chain4$ZETA)
+kappa2hat_4 <- mean(chain4$OTROS$k2)
+lpyth_m4 <- sum(dnorm(x = y, mean = zetahat_4, sd = sqrt(kappa2hat_4),log = T))
+pDIC_m4 <- 2*(lpyth_m4-mean(LP4))
+dic_m4 <- -2*lpyth_m4 + 2*pDIC_m4
+
+#M5
+LP5 <- as.numeric(chain5$LL$ll)
+zetahat_5 <- colMeans(chain5$ZETA)
+kappa2hat_5 <- mean(chain5$OTROS$k2)
+lpyth_m5 <- sum(dnorm(x = y, mean = zetahat_5, sd = sqrt(kappa2hat_5),log = T))
+pDIC_m5 <- 2*(lpyth_m5-mean(LP5))
+dic_m5 <- -2*lpyth_m5+2*pDIC_m5
+
+
+DICs <- c(dic_m1,dic_m2,dic_m3,dic_m4,dic_m5)
+DICs
 
 
 
 ```
+
+```{r Punto 5 WAIC}
+n <- length(datos$PUNT_GLOBAL)
+y <- datos$PUNT_GLOBAL
+Y <- vector(mode = "list", length = m)
+g <- rep(NA, n)
+for (j in 1:m) {
+  idx <- datos$ESTU_CONSECUTIVO == unique(datos$ESTU_CONSECUTIVO)[j]
+  g[idx] <- j
+  Y[[j]] <- y[idx]
+}
+```
+
 
 ```{r  Punto 6}
 
@@ -984,5 +1061,151 @@ punto_6 <- rbind(medias,ICs)
 
 `colnames<-`(punto_6,c("M1","M2","M3","M4","M5"))
 print(punto_6)
+```
+
+```{r Punto 7}
+estadisticos <- datos %>% 
+  group_by(datos$COLE_COD_DEPTO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_DEPTO_UBICACION), 
+            nombre = unique(COLE_DEPTO_UBICACION), 
+            nj = n(), 
+            yb = mean(PUNT_GLOBAL), 
+            s2 = var(PUNT_GLOBAL))
+
+ids2 <- estadisticos$nombre
+yb <- estadisticos$yb
+that <- yb
+s2 <- estadisticos$s2
+ic1  <- NULL
+
+
+# ranking Bayesiano
+ids2 <- estadisticos$nombre
+that <- colMeans(chain5$THETA[,1:m])
+ic1  <- apply(X = chain5$THETA[,1:m], MARGIN = 2, FUN = function(x) quantile(x, c(0.025,0.975)))
+ranking <- order(that) 
+ids2 <- ids2[ ranking]
+that <- that[ ranking]
+ic1  <- ic1 [,ranking]
+colo <- rep(2,m)
+colo[which(ic1[1,]>250)] <- 1
+colo[which(ic1[2,]<250)] <- 3
+colo <- c("green4","black","red")[colo]
+# gráfico
+par(mfrow = c(1,2), mar = c(4,10,1.5,1), mgp = c(2.5,0.75,0))
+plot(NA, NA, xlab = "Puntaje", ylab = "", main = "Ranking Bayesiano", xlim = c(180,320), ylim = c(1,m), cex.axis = 0.75, yaxt = "n")
+axis(side = 2, at = 1:m, labels = ids2, las = 2)
+abline(v = 250,  col = "gray", lwd = 3)
+abline(h = 1:m, col = "lightgray", lwd = 1)
+for (j in 1:m) {
+  segments(x0 = ic1[1,j], y0 = j, x1 = ic1[2,j], y1 = j, col = colo[j])
+  lines(x = that[j], y = j, type = "p", pch = 16, cex = 0.8, col = colo[j])
+}
+
+estadisticos <- datos %>% 
+  group_by(datos$COLE_COD_DEPTO_UBICACION) %>% 
+  summarise(codigo = unique(COLE_COD_DEPTO_UBICACION), 
+            nombre = unique(COLE_DEPTO_UBICACION), 
+            nj = n(), 
+            yb = mean(PUNT_GLOBAL), 
+            s2 = var(PUNT_GLOBAL))
+
+ids2 <- estadisticos$nombre
+yb <- estadisticos$yb
+that <- yb
+s2 <- estadisticos$s2
+ic1  <- NULL
+
+
+#Frecuentista
+for (j in 1:m)
+  ic1  <- cbind(ic1, yb[j] + c(-1,1)*qnorm(p = 0.975)*sqrt(s2[j])/sqrt(nj[j]))
+ranking <- order(that) 
+ids2 <- ids2[ranking]
+that <- that[ranking]
+ic1  <- ic1 [,ranking]
+colo <- rep(2,m)
+colo[which(ic1[1,]>250)] <- 1
+colo[which(ic1[2,]<250)] <- 3
+colo <- c("green4","black","red")[colo]
+# gráfico
+plot(NA, NA, xlab = "Puntaje", ylab = "", main = "Ranking Frecuentista", xlim = c(180,320), ylim = c(1,m), cex.axis = 0.75, yaxt = "n")
+axis(side = 2, at = 1:m, labels = ids2, las = 2)
+abline(v = 250,  col = "gray", lwd = 3)
+abline(h = 1:m, col = "lightgray", lwd = 1)
+for (j in 1:m) {
+  segments(x0 = ic1[1,j], y0 = j, x1 = ic1[2,j], y1 = j, col = colo[j],lwd = 2)
+  lines(x = that[j], y = j, type = "p", pch = 16, cex = 0.8, col = colo[j])
+}
+```
+```{r Punto 8}
+# k means para cada iteracion
+
+# Número de clústeres deseados
+clusters <-5
+
+# Inicializa una lista para almacenar los resultados
+kmedias <- matrix(NA,nrow=10000,ncol=32)
+
+# Realiza K-Means en cada fila de la matriz de datos
+for (i in 1:10000) {
+  departamentos <- t(chain5$THETA) # Obtiene la fila i
+  clusters_kmedias <- kmeans(departamentos, centers = clusters)  # Aplica K-Means a la fila
+  kmedias[i,] <- clusters_kmedias$cluster  # Almacena el 
+}
+
+B <- nrow(chain5$THETA)
+B_grid <- seq(from = 5, to = B, len = B/10)
+# matriz de incidencia
+A <- matrix(data = 0, nrow = m, ncol = m)
+for (b in B_) {
+  for (i in 1:(m-1)) {
+    for (j in (i+1):m) {
+      if (kmedias$XI[b,i] == kmedias$XI[b,j]) {
+        A[i,j] <- A[i,j] + 1/B
+      } 
+    }
+  }
+}
+A <- A + t(A)
+diag(A) <- 1
+# se organizan las observaciones de acuerdo a la partición verdadera
+indices <- order(xi)
+A <- A[indices,indices]
+# visualización de la matriz de incidencia
+par(mar = c(2.75,2.75,0.5,0.5), mgp = c(1.7,0.7,0))
+corrplot::corrplot(corr = A, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "n")
+```
+
+
+```{r}
+regresion <- Mapa %>%
+  select(cod_dep, dep, IP2018) %>%
+  as.data.frame()
+
+
+predicciones <- matrix(data = NA, nrow = 10000, ncol=8)
+
+for (b in 1:10000) {
+  media <- unlist(chain5$THETA[b,]) 
+  regresion$media <- media
+  modelo <- lm(IP2018 ~ media, data = regresion)
+  last_8_rows <- media[(length(media) - 7):length(media)]
+  new_data <- data.frame(media = last_8_rows)
+  a = predict(modelo,newdata = new_data)
+  predicciones[b, ] <- a
+}
+
+colMeans(predicciones)
+```
+
+
+
+```{r}
+#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain1.Rdata")
+#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain2.Rdata")
+#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain3.Rdata")
+#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain4.Rdata")
+#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain5.Rdata")
 ```
 
