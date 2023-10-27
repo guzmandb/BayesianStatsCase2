@@ -45,6 +45,7 @@ datos <- Saber11 %>%
             COLE_COD_DEPTO_UBICACION != 88 &
            ESTU_ESTADOINVESTIGACION=="PUBLICAR" 
            ) %>%
+  arrange(COLE_COD_DEPTO_UBICACION,COLE_COD_MCPIO_UBICACION)%>%
   as.data.frame()
 
 nrow(datos)
@@ -209,7 +210,18 @@ grid.arrange(plot3, plot4, ncol = 2)
 ```
 
 
+
+## Implemetación de los modelos
+
+###MODELO 1, modelo normal
 ```{r Implementación Modelos}
+#B total de iteraciones para el muestreador
+#y vector de puntajes
+#Hiperparametros
+#mu0
+#gamma0
+#nu0
+#s20
 mod1 <- function(B,y,mu0,gamma0,nu0,s20){
   #tamaños
   n <- length(y)
@@ -239,7 +251,6 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
     theta <- rnorm(n = 1, mean = (ysum/sig2 + mu0_gamma0)*vtheta, sd = sqrt(vtheta))
     
     #actualizar sigma^2
-    
     sig2 <- 1/rgamma(n = 1, shape =  nun_2, rate = 0.5*(nu0xs20+(n-1)*s2+n*(ybar-theta)^2))
     
     
@@ -253,24 +264,16 @@ mod1 <- function(B,y,mu0,gamma0,nu0,s20){
     }
   }
   
-
   #fin de la cadena
-  
-
   colnames(THETA) <- c("theta","sig2")
   colnames(LL) <- c("ll")
-  
-  THETA <- THETA[!rowSums(is.na(THETA)) == ncol(THETA), ]
-  LL <- LL[!rowSums(is.na(LL)) == ncol(LL), ]
-  
+
   #salida
-  
   THETA <- as.data.frame(THETA)
   LL <- as.data.frame(LL)
   return(list(THETA = THETA,LL = LL))
 }
 ```
-
 
 ```{r calculo modelo 1}
 #Hiperparametros
@@ -280,18 +283,34 @@ gamma0 <- 50^2
 nu0 <- 1 
 s20 <- 50^2
 
-
 tictoc::tic()
-set.seed(2023)
+set.seed(1203)
 chain1 <- mod1(B = 101000, y = y,mu0 = mu0,gamma0 = gamma0, nu0 = nu0, s20 = s20)
 tictoc::toc()
 ```
+
+### Pruebas de convergencia (gráficas)
 ```{r, graficas cadena 1}
 plot(x = 1:10000, y =  unlist(chain1$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
 plot(chain1$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
 plot(chain1$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+
+#La logverosimilitud parece que convergen apropiadamente.
+```
+### Pruebas de convergencia (Tamaño efectivo de Muestra, Error estándar de Montecarlo, Coeficiente del error de Montecarlo)
+```{r}
+#tamaño efectivo de muestra
+(neff_THETA_1 <- coda::effectiveSize(chain1$THETA))
+
+#error estandar de Monte Carlo
+EMC_1 <- apply(X = chain1$THETA, MARGIN = 2, FUN = sd)/sqrt(neff_THETA_1)
+
+#coeficiente de variación de Monte Carlo (%)
+CVMC_1 <- 100*abs(EMC_1/colMeans(chain1$THETA))
+(round(CVMC_1,digits=4))
 ```
 
+## Modelo 2(Modelo jerárquico Normal con medias específicas)
 ```{r}
 mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
   #tamaño 
@@ -329,7 +348,6 @@ mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
     # actualizar tau^2
     tau2 <- 1/rgamma(n = 1, shape = 0.5*(eta0_m), rate = 0.5*(eta0*t20 + (m-1)*var(theta) + m*(mean(theta) - mu)^2))
     
-    
     #Almacenar valores
     if(b > 1000 &&  (b - 1000) %% 10 == 0){
     #almacenar valores
@@ -349,7 +367,7 @@ mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
 }
 ```
 
-```{r}
+```{r calculo de la cadena 2}
 # tratamiento de datos
 # y  : puntaje de los estudiantes (c)
 # Y  : puntaje de los estudiantes (list)
@@ -357,18 +375,10 @@ mod2 <- function(B,nj,yb,s2,mu0, g20, eta0, t20, nu0, s20){
 # nj : número de estudiantes por departamento (c)
 # yb : promedios por departamento (c)
 # s2 : varianzas por departamento (c)
-(m <- length(table(datos$COLE_COD_DEPTO_UBICACION)))
-
+m <- length(table(datos$COLE_COD_DEPTO_UBICACION))
 y <- datos$PUNT_GLOBAL
-
 Y <- vector(mode = "list", length = m)
 
-#for (j in 1:m) {
-#  idx <- datos$COLE_COD_MCPIO_UBICACION == unique(datos$COLE_COD_MCPIO_UBICACION)[j]
-#  g[idx] <- j
-#  Y[[j]] <- y[idx]
-#}
-# tabla
 estadisticos <- datos %>% 
   group_by(COLE_COD_DEPTO_UBICACION) %>% 
   summarise(codigo = unique(COLE_COD_DEPTO_UBICACION), 
@@ -395,20 +405,44 @@ chain2 <- mod2(B = 101000, nj, yb, s2, mu0, g20, eta0, t20, nu0, s20)
 tictoc::toc()
 ```
 
+### Pruebas de convergencia (gráficas)
 ```{r, graficas cadena 2}
 plot(x = 1:10000, y =  unlist(chain2$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
-plot(chain2$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_1))
-plot(chain2$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_2))
+
+#seleccionaremos 5 thetas al azar.
+set.seed(101)
+sample(1:m, 5, replace = FALSE)
+#los thetas seleccionados son: 9 25 14 23 17
+
+plot(chain2$THETA[,9], type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[9]))
+plot(chain2$THETA[,25],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[25]))
+plot(chain2$THETA[,14],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[14]))
+plot(chain2$THETA[,23],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[23]))
+plot(chain2$THETA[,17],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[17]))
+
+#ahora veremos los otros parámetros 
 plot(chain2$THETA[,m+1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
 plot(chain2$THETA[,m+2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
 plot(chain2$THETA[,m+3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau^2))
 ```
-
+### Pruebas de convergencia (Tamaño efectivo de Muestra, Error estándar de Montecarlo, Coeficiente del error de Montecarlo)
 ```{r}
-save(chain2,file="chain2.Rdata")
+neff_THETA_2 <- coda::effectiveSize(chain2$THETA[1:m])
+(summary(neff_THETA_2))
+(neff_OTROS_2 <- coda::effectiveSize(chain2$THETA[(m+1):(m+3)]))
+
+#error estandar de Monte Carlo
+EMC_THETA_2 <- apply(X = chain2$THETA[1:m], MARGIN = 2, FUN = sd)/sqrt(neff_THETA_2)
+EMC_OTROS_2 <- apply(X = chain2$THETA[(m+1):(m+3)], MARGIN = 2, FUN = sd)/sqrt(neff_OTROS_2)
+
+#coeficiente de variación de Monte Carlo (%)
+CVMC_THETA_2 <- 100*abs(EMC_THETA_2/colMeans(chain2$THETA[1:m]))
+CVMC_OTROS_2 <- 100*abs(EMC_OTROS_2/colMeans(chain2$THETA[(m+1):(m+3)]))
+(summary(round(CVMC_THETA_2,digits = 4)))
+(round(CVMC_OTROS_2,digits = 4))
 ```
 
-
+### Modelo 3, Modelo jerárquico Normal con medias y varianzas específicas 
 ```{r cadena3}
 mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
   # tamaños
@@ -452,8 +486,7 @@ mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
     
     # actualizar sigma^2
     ups2 <- rgamma(n = 1, shape = a, rate = (be0 + nu*sum(1/sig2))*0.5)
-    
-
+  
     # almacenar
     if(b > 1000 && (b - 1000) %% 10 == 0){
     THETA[cont,] <- c(theta, sig2, mu, tau2, ups2)
@@ -474,8 +507,8 @@ mod3 <- function(B, nj, yb, s2, mu0, g20, eta0, t20,al0, be0,nu) {
 ```
 
 
-```{r cadena3}
-(m <- length(table(datos$COLE_COD_DEPTO_UBICACION)))
+```{r calculo de la cadena3}
+m <- length(table(datos$COLE_COD_DEPTO_UBICACION))
 
 y <- datos$PUNT_GLOBAL
 
@@ -506,28 +539,144 @@ tictoc::tic()
 set.seed(2023)
 chain3 <- mod3(B = 101000, nj, yb, s2, mu0, g20, eta0, t20,al0,be0,nu)
 tictoc::toc()
-
 ```
 
+### Pruebas de convergencia (gráficas)
 ```{r, graficas cadena 3}
 plot(x = 1:10000, y =  unlist(chain3$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
-plot(chain3$THETA[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_1))
-plot(chain3$THETA[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta_2))
-plot(chain3$THETA[,m+1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
-plot(chain3$THETA[,m+2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma_2))
+#Escogeremos 5 valores de theta al azar
+set.seed(1001)
+(sample(1:m,5,replace = FALSE))
+#Los thetas escogidos fueron 23 3 32 15 16
+plot(chain3$THETA[,23],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[23]))
+plot(chain3$THETA[,3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[3]))
+plot(chain3$THETA[,32],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[32]))
+plot(chain3$THETA[,15],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[15]))
+plot(chain3$THETA[,16],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[16]))
+
+#Escogeremos 5 valores al azar, para graficar los sigma^2
+set.seed(1002)
+(sample((m+1):(2*m),5,replace = FALSE))-m
+#los valores de sigma a mostrar son 12  9 15 29  7 o (44 41 47 61 39)
+plot(chain3$THETA[,44],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma[12]^2))
+plot(chain3$THETA[,41],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma[9]^2))
+plot(chain3$THETA[,47],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma[15]^2))
+plot(chain3$THETA[,61],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma[29]^2))
+plot(chain3$THETA[,39],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma[7]^2))
+
 plot(chain3$THETA$tau2,type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau))
 plot(chain3$THETA$mu,type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
-plot(chain3$THETA$ups2,type = "p", pch = ".", xlab = "Iteración", ylab = expression(ups))
+plot(chain3$THETA$ups2,type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
+```
+### Pruebas de convergencia (Tamaño efectivo de Muestra, Error estándar de Montecarlo, Coeficiente del error de Montecarlo)
+```{r}
+neff_THETA_3 <- coda::effectiveSize(chain3$THETA[1:m])
+neff_SIG_3 <- coda::effectiveSize(chain3$THETA[(m+1):(2*m)])
+(summary(neff_THETA_3))
+(summary(neff_SIG_3))
+(neff_OTROS_3 <- coda::effectiveSize(chain3$THETA[(2*m+1):(2*m+3)]))
+
+#error estandar de Monte Carlo
+EMC_THETA_3 <- apply(X = chain3$THETA[1:m], MARGIN = 2, FUN = sd)/sqrt(neff_THETA_3)
+EMC_SIG_3 <- apply(X = chain3$THETA[(m+1):(2*m)], MARGIN = 2, FUN = sd)/sqrt(neff_SIG_3)
+EMC_OTROS_3 <- apply(X = chain3$THETA[(2*m+1):(2*m+3)], MARGIN = 2, FUN = sd)/sqrt(neff_OTROS_3)
+
+#coeficiente de variación de Monte Carlo (%)
+CVMC_THETA_3 <- 100*abs(EMC_THETA_3/colMeans(chain3$THETA[1:m]))
+CVMC_SIG_3 <- 100*abs(EMC_SIG_3/colMeans(chain3$THETA[(m+1):(2*m)]))
+CVMC_OTROS_3 <- 100*abs(EMC_OTROS_3/colMeans(chain3$THETA[(2*m+1):(2*m+3)]))
+(summary(round(CVMC_THETA_3,digits = 4)))
+(summary(round(CVMC_SIG_3,digits = 4)))
+(round(CVMC_OTROS_3,digits = 4))
+```
+
+### Modelo 4, Modelo Normal con medias específicas por municipio y departamento
+```{r}
+mod4 <- function(B,njk,ybjk,s2jk,nk,xi0,k20,mu0,g20,eta0,tau20,nu0,s20){
+#tamaños 
+  N <- sum(njk)
+  lennjk <- length(njk)
+  sumnk <- sum(nk)
+  m <- length(nk)
+
+#valores inciales
+  k2 <- 1/rgamma(n = 1, shape = xi0*0.5,rate = (xi0*k20)*0.5)
+  mu <- rnorm(n = 1, mean = mu0,sd = sqrt(s20))
+  tau2 <- 1/rgamma(n = 1, shape = eta0*0.5,rate = (eta0*tau20)*0.5)
+  sig2 <- 1/rgamma(n=1, shape = nu0*0.5,rate = (nu0*s20)*0.5)
+  theta <- rnorm(n = m, mean = mu, sd = sqrt(tau2))
+#calculos previos
+  xi0xk20  <- xi0*k20
+  N_xi0 <- N+xi0
+  invg20 <- 1/g20
+  mu0_g20 <- mu0/g20
+  m_eta0_2 <- 0.5*(m+eta0)
+  eta0xtau20 <- eta0*tau20
+  sumnk_nu0 <- sumnk+nu0 
+  nu0xs20 <- nu0*s20
+
+  cont <- 1
+  
+  #Almacenamiento
+  ZETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = lennjk)
+  THETA <- matrix(data = NA,nrow = (B-1000)/10, ncol = m)
+  OTROS <- matrix(data = NA, nrow = (B-1000)/10,ncol =  4)
+  LL    <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
+  
+  for (b in 1:B) {
+    #actualizar zeta
+    vzeta <- 1/(njk/k2 + 1/sig2)
+    zeta <- rnorm(n = lennjk ,mean = vzeta*((njk*ybjk)/k2+rep(theta,nk)/sig2),sd = sqrt(vzeta))
+    
+    zetabar <- tapply(zeta, rep(1:m, times = nk), FUN = mean)
+    vzeta <- tapply(zeta, rep(1:m, times = nk), FUN = var)
+    vzeta[3] <- (zeta[149]-theta[3])^2
+    
+    #actualizar kappa^2
+    k2 <- 1/rgamma(n = 1, shape = 0.5*(N_xi0),rate = 0.5*(xi0xk20 + sum((njk-1)*s2jk+njk*(ybjk-zeta)^2)))
+    
+    #actualizar theta
+    vtheta <- 1/(nk/sig2+1/tau2)
+    theta <- rnorm(n = m,mean = vtheta*((nk*zetabar)/sig2+mu/tau2),sd=sqrt(vtheta))
+    
+    thetabar <- mean(theta)
+    stheta <- var(theta)
+    
+    #actualizar mu 
+    vmu <- 1/(m/tau2 + invg20)
+    mu <- rnorm(n=1, mean = vmu*((m*thetabar)/tau2+mu0_g20), sd = sqrt(vmu))
+    
+    #actualizar tau^2
+    tau2 <- 1/rgamma(n = 1,shape = m_eta0_2,rate = 0.5*(eta0xtau20+(m-1)*stheta+m*(thetabar-mu)^2))
+    
+    #actualizar sig2
+    sig2 <- 1/rgamma(n = 1,shape = 0.5*sumnk_nu0,rate = 0.5*(nu0xs20+sum((nk-1)*vzeta + nk*(zetabar-theta)^2)))
+    
+    if((b - 1000) %% 10 == 0 && b > 1000){
+      ZETA[cont,] <- zeta
+      THETA[cont,] <- theta
+      OTROS[cont,] <- c(k2,mu,tau2,sig2)
+      LL[cont] <- sum(dnorm(x = y, mean = rep(zeta, njk), sd = sqrt(k2), log = T))
+      cont <- cont+1
+    }
+  }
+  #colnames(THETA) <- c(paste0("theta", 1:m), paste0("sig2", 1:m), "mu", "tau2", "ups2")
+  colnames(ZETA) <- c(paste0("zeta",1:lennjk))
+  colnames(THETA) <- c(paste0("theta",1:m))
+  colnames(OTROS) <- c("k2","mu","tau2","sig2")
+  colnames(LL) <- c("ll")
+  
+  ZETA <- as.data.frame(ZETA)
+  THETA <- as.data.frame(THETA)
+  OTROS <- as.data.frame(OTROS)
+  LL <- as.data.frame(LL)
+  
+  return(list(ZETA = ZETA,THETA = THETA,OTROS = OTROS,LL = LL))
+}
 ```
 
 
-```{r}
-save(chain3,file="chain3.Rdata")
-```
-
-
-
-```{r}
+```{r, definimos hiperparametros}
 estadisticas_mpios <- datos %>%
   mutate(COLE_COD_MCPIO_UBICACION = ifelse(substr(COLE_COD_MCPIO_UBICACION, 1, 1) == "0", substr(COLE_COD_MCPIO_UBICACION, 2, nchar(COLE_COD_MCPIO_UBICACION)), COLE_COD_MCPIO_UBICACION)) %>%
   group_by(COLE_COD_MCPIO_UBICACION) %>%
@@ -557,16 +706,9 @@ estadisticas_deptos <- datos %>%
             s2k = var(PUNT_GLOBAL))%>%
   arrange(COLE_COD_DEPTO_UBICACION)
 
-
 njk <- estadisticas_mpios$njk
 ybjk <- estadisticas_mpios$ybjk
 s2jk <- estadisticas_mpios$s2jk
-
-
-ybd <- estadisticas_deptos$ybk
-s2d <- estadisticas_deptos$s2k
-
-#B,njk,ybk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,eta0,tau20,nu0,s20
 
 #hiperparametros
 B <- 101000
@@ -581,150 +723,66 @@ s20 <- 50^2
 y<-datos$PUNT_GLOBAL
 ```
 
-```{r}
-mod4 <- function(B,njk,ybk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,eta0,tau20,nu0,s20){
-  
-#tamaños 
-  N <- sum(njk)
-  lennjk <- length(njk)
-  sumnk <- sum(nk)
-  m <- length(nk)
-
-#valores inciales
-  theta <- rnorm(n = m, mean = ybd, sd = sqrt(s2d))
-  k2 <- 1/rgamma(n = 1, shape = xi0*0.5,rate = (xi0*k20)*0.5)
-  mu <- rnorm(n = 1, mean = mu0,sd = sqrt(s20))
-  tau2 <- 1/rgamma(n = 1, shape = eta0*0.5,rate = (eta0*tau20)*0.5)
-  sig2 <- 1/rgamma(n=1, shape = nu0*0.5,rate = (nu0*s20)*0.5)
-  
-#calculos previos
-  xi0xk20  <- xi0*k20
-  N_xi0 <- N+xi0
-  invg20 <- 1/g20
-  mu0_g20 <- mu0/g20
-  m_eta0_2 <- 0.5*(m+eta0)
-  eta0xtau20 <- eta0*tau20
-  sumnk_nu0 <- sumnk+nu0 
-  nu0xs20 <- nu0*s20
-  
-  start <- 1
-  end <- 0
-  cont <- 1
-  
-  #Almacenamiento
-  ZETA <- matrix(data = NA, nrow = (B-1000)/10, ncol = lennjk)
-  THETA <- matrix(data = NA,nrow = (B-1000)/10, ncol = m)
-  OTROS <- matrix(data = NA, nrow = (B-1000)/10,ncol =  4)
-  LL    <- matrix(data = NA, nrow = (B-1000)/10, ncol = 1)
-  
-  for (b in 1:B) {
-    #actualizar zeta
-    vzeta <- 1/(njk/k2 + 1/sig2)
-    zeta <- rnorm(n = lennjk ,mean = vzeta*((njk*ybjk)/k2+rep(theta,nk)/sig2),sd = sqrt(vzeta))
-    
-    zetabar <- tapply(zeta, rep(1:m, times = nk), FUN = mean)
-    vzeta <- tapply(zeta, rep(1:m, times = nk), FUN = var)
-    vzeta[3] <- 0
-    
-    #actualizar kappa^2
-    k2 <- 1/rgamma(n = 1, shape = 0.5*(N_xi0),rate = 0.5*(xi0xk20 + sum((njk-1)*s2jk+njk*(ybjk-zeta)^2)))
-    
-    #actualizar theta
-    vtheta <- 1/((nk/sig2+1/tau2))
-    theta <- rnorm(n = m,mean = vtheta*((nk*zetabar)/sig2+mu/tau2),sd=sqrt(vtheta))
-    
-    thetabar <- mean(theta)
-    stheta <- var(theta)
-    
-    #actualizar mu 
-    vmu <- 1/(m/tau2 + invg20)
-    mu <- rnorm(n=1, mean = vmu*((m*thetabar)/tau2+mu0_g20), sd = sqrt(vmu))
-    
-    #actualizar tau^2
-    tau2 <- 1/rgamma(n = 1,shape = m_eta0_2,rate = 0.5*(eta0xtau20+(m-1)*stheta+m*(thetabar-mu)^2))
-    
-    #actualizar sig2
-    sig2 <- 1/rgamma(n = 1,shape = sumnk_nu0,rate = 0.5*(nu0xs20+sum((nk-1)*vzeta + nk*(zetabar-theta)^2)))
-    
-    if((b - 1000) %% 10 == 0 && b > 1000){
-      ZETA[cont,] <- zeta
-      THETA[cont,] <- theta
-      OTROS[cont,] <- c(k2,mu,tau2,sig2)
-      LL[cont] <- sum(dnorm(x = y, mean = rep(zeta, njk), sd = sqrt(k2), log = T))
-      cont <- cont+1
-    }
-  }
-  #colnames(THETA) <- c(paste0("theta", 1:m), paste0("sig2", 1:m), "mu", "tau2", "ups2")
-  colnames(ZETA) <- c(paste0("zeta",1:lennjk))
-  colnames(THETA) <- c(paste0("theta",1:m))
-  colnames(OTROS) <- c("k2","mu","tau2","sig2")
-  colnames(LL) <- c("ll")
-  
-  ZETA <- as.data.frame(ZETA)
-  THETA <- as.data.frame(THETA)
-  OTROS <- as.data.frame(OTROS)
-  LL <- as.data.frame(LL)
-  
-  
-  return(list(ZETA = ZETA,THETA = THETA,OTROS = OTROS,LL = LL))
-}
-```
-
-
-```{r}
+```{r calculo de la cadena 4}
 tictoc::tic()
 set.seed(2023)
-chain4 <- mod4(B,njk,ybk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,eta0,tau20,nu0,s20)
+chain4 <- mod4(B,njk,ybjk,s2jk,nk,xi0,k20,mu0,g20,eta0,tau20,nu0,s20)
 tictoc::toc()
 ```
-
-
+### Pruebas de convergencia (gráficas)
 ```{r}
 plot(x = 1:10000, y =  unlist(chain4$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
 
-plot(chain4$ZETA[,12],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta))
-plot(chain4$THETA[,4],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
+##elegimos 5 zeta al azar
+set.seed(1003)
+sample(1:length(njk),5,replace = FALSE)
+#los zeta elegidos fueron 217,102,629,1029,940
+plot(chain4$ZETA[,217],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[217]))
+plot(chain4$ZETA[,102],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[102]))
+plot(chain4$ZETA[,629],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[629]))
+plot(chain4$ZETA[,1029],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[1029]))
+plot(chain4$ZETA[,940],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[940]))
+
+#elegimos 3 thetas añ azar
+set.seed(1004)
+sample(1:m,3,replace = FALSE)
+#los thetas a graficar son 11,24,22
+plot(chain4$THETA[,11],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[11]))
+plot(chain4$THETA[,4],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[24]))
+plot(chain4$THETA[,4],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[22]))
+
 plot(chain4$OTROS[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(kappa))
 plot(chain4$OTROS[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
 plot(chain4$OTROS[,3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau))
 plot(chain4$OTROS[,4],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma))
 ```
-
-
-
+### Pruebas de convergencia (Tamaño efectivo de Muestra, Error estándar de Montecarlo, Coeficiente del error de Montecarlo)
 ```{r}
-save(chain4,file="chain4.Rdata")
+#Tamaños efectivos de muestra
+neff_ZETA_4 <- coda::effectiveSize(chain4$ZETA)
+neff_THETA_4 <- coda::effectiveSize(chain4$THETA)
+(summary(neff_ZETA_4))
+(summary(neff_THETA_4))
+(neff_OTROS_4 <- coda::effectiveSize(chain4$OTROS))
+
+#error estandar de Monte Carlo
+EMC_ZETA_4 <- apply(X = chain4$ZETA, MARGIN = 2, FUN = sd)/sqrt(neff_ZETA_4)
+EMC_THETA_4 <- apply(X = chain4$THETA, MARGIN = 2, FUN = sd)/sqrt(neff_THETA_4)
+EMC_OTROS_4 <- apply(X = chain4$OTROS, MARGIN = 2, FUN = sd)/sqrt(neff_OTROS_4)
+
+#coeficiente de variación de Monte Carlo (%)
+CVMC_ZETA_4 <- 100*abs(EMC_ZETA_4/colMeans(chain4$ZETA))
+CVMC_THETA_4 <- 100*abs(EMC_THETA_4/colMeans(chain4$THETA))
+CVMC_OTROS_4 <- 100*abs(EMC_OTROS_4/colMeans(chain4$OTROS))
+
+(summary(round(CVMC_ZETA_4,digits = 4)))
+(summary(round(CVMC_THETA_4,digits = 4)))
+(round(CVMC_OTROS_4,digits = 4))
 ```
 
+### Modelo 5,Modelo Normal con medias y varianzas específicas por municipio y departamento
 ```{r}
-neffotros <- coda::effectiveSize(chain4$OTROS)
-nefftheta <- coda::effectiveSize(chain4$THETA)
-neffzeta <- coda::effectiveSize(chain4$ZETA)
-```
-
-```{r}
-round(neffotros,digits = 3)
-round(apply(X = chain4$OTROS, MARGIN = 2, FUN = sd)/sqrt(neffotros), 3)
-
-library(foreign)
-library(xtable)
-library(stargazer)
-#xtable(newobject2, type = "latex", file = "filename2.tex")
-
-```
-
-
-```{r}
-round(summary(apply(X = chain4$THETA, MARGIN = 2, FUN = sd)/sqrt(nefftheta)), 3)
-```
-
-
-```{r}
-round(summary(apply(X = chain4$ZETA, MARGIN = 2, FUN = sd)/sqrt(neffzeta)), 3)
-```
-
-```{r}
-mod5 <- function(B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be0){
+mod5 <- function(B,njk,ybjk,s2jk,nk,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be0){
   
   #tamaños
   N <- sum(njk)
@@ -733,12 +791,14 @@ mod5 <- function(B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be
   m <- length(nk)
   
   #valores iniciales
-  theta <- ybd
+  
   k2 <- 1/rgamma(n = 1, shape = xi0*0.5,rate = (xi0*k20)*0.5)
   mu <- rnorm(n = 1, mean = mu0,sd = sqrt(s20))
   tau2 <- 1/rgamma(n = 1, shape = eta0*0.5,rate = (eta0*tau20)*0.5)
-  sig2 <- s2d
   ups <- rgamma(n = 1, shape = al0*0.5 , rate = be0*0.5)
+  theta <- rnorm(n = m, mean = mu, sd = sqrt(tau2))
+  sig2 <- 1/rgamma(n = m, shape = nu,rate = ups)
+  
   
   #calculos previos
   xi0xk20  <- xi0*k20
@@ -748,7 +808,7 @@ mod5 <- function(B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be
   m_eta0_2 <- 0.5*(m+eta0)
   eta0xtau20 <- eta0*tau20
   nk_nu <- nk + nu
-  nu_al0_2 <- 0.5*(nu+al0)
+  nu_al0_2 <- 0.5*(m*nu+al0)
   
   cont <- 1
   
@@ -762,11 +822,11 @@ mod5 <- function(B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be
   for (b in 1:B) {
     #actualizar zeta
     vzeta <- 1/(njk/k2 + 1/rep(sig2,nk))
-    zeta <- rnorm(n = lennjk, mean = vzeta*((njk*ybjk)/k2+rep(theta,nk)/rep(sig2,nk)))
+    zeta <- rnorm(n = lennjk, mean = vzeta*((njk*ybjk)/k2+rep(theta,nk)/rep(sig2,nk)),sd = sqrt(vzeta))
     
     zeta_bar <- tapply(zeta, rep(1:m, times = nk), FUN = mean)
     var_zeta <- tapply(zeta, rep(1:m, times = nk), FUN = var)
-    var_zeta[3] <- 0
+    var_zeta[3] <- (zeta[149]-theta[3])^2
     
     #actualizar k2
     k2 <- 1/rgamma(n = 1, shape = 0.5*(N_xi0),rate = 0.5*(xi0xk20 + sum((njk-1)*s2jk+njk*(ybjk-zeta)^2)))
@@ -818,7 +878,7 @@ mod5 <- function(B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be
 }
 ```
 
-```{r}
+```{r hiperparametros}
 estadisticas_mpios <- datos %>%
   mutate(COLE_COD_MCPIO_UBICACION = ifelse(substr(COLE_COD_MCPIO_UBICACION, 1, 1) == "0", substr(COLE_COD_MCPIO_UBICACION, 2, nchar(COLE_COD_MCPIO_UBICACION)), COLE_COD_MCPIO_UBICACION)) %>%
   group_by(COLE_COD_MCPIO_UBICACION) %>%
@@ -848,18 +908,14 @@ estadisticas_deptos <- datos %>%
             s2k = var(PUNT_GLOBAL))%>%
   arrange(COLE_COD_DEPTO_UBICACION)
 
-
 njk <- estadisticas_mpios$njk
 ybjk <- estadisticas_mpios$ybjk
 s2jk <- estadisticas_mpios$s2jk
 
-
 ybd <- estadisticas_deptos$ybk
 s2d <- estadisticas_deptos$s2k
 
-
 #B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be0
-
 #hiperparametros
 B <- 101000
 xi0 <- 1
@@ -874,108 +930,102 @@ be0 <- 1/50^2
 y<-datos$PUNT_GLOBAL
 ```
 
-```{r}
+```{r, calculo de la cadena 5}
 tictoc::tic()
-set.seed(2023)
-chain5 <- mod5(B,njk,ybjk,s2jk,nk,ybd,s2d,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be0)
+set.seed(2023) 
+chain5 <- mod5(B,njk,ybjk,s2jk,nk,xi0,k20,mu0,g20,tau20,eta0,nu,al0,be0)
 tictoc::toc()
 ```
 
-
+### Pruebas de convergencia (gráficas)
 ```{r}
 plot(x = 1:10000, y =  unlist(chain5$LL),type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud")
 
-plot(chain5$ZETA[,1032],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta))
-plot(chain5$ZETA[,187],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta))
-plot(chain5$ZETA[,286],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta))
-plot(chain5$ZETA[,122],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta))
-plot(chain5$ZETA[,356],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta))
+#elegiremos 5 zetas para graficar de manera aleatoria
+set.seed(1005)
+sample(1:length(njk),5,replace = FALSE)
+#los zetas a graficas son 1049  562 1008  329  44
 
-plot(chain5$THETA[,14],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
-plot(chain5$THETA[,15],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
-plot(chain5$THETA[,3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta))
+plot(chain5$ZETA[,1049],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[1049]))
+plot(chain5$ZETA[,562],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[562]))
+plot(chain5$ZETA[,1008],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[1008]))
+plot(chain5$ZETA[,329],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[329]))
+plot(chain5$ZETA[,445],type = "p", pch = ".", xlab = "Iteración", ylab = expression(zeta[445]))
 
+#elegiremos 3 thetas para graficar de manera aleatoria
+set.seed(1006)
+sample(1:m,3,replace = FALSE)
+#los thetas a graficar son 28  5 20
 
-plot(chain5$SIG2[,3],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma))
-plot(chain5$SIG2[,17],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma))
-plot(chain5$SIG2[,11],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma))
+plot(chain5$THETA[,28],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[28]))
+plot(chain5$THETA[,5],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[5]))
+plot(chain5$THETA[,20],type = "p", pch = ".", xlab = "Iteración", ylab = expression(theta[20]))
 
-plot(chain5$OTROS[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(kappa))
+#elegiremos 3 sigmas para graficar de manera aleatoria
+set.seed(1007)
+sample(1:m,3,replace = FALSE)
+#los sigmas a graficar son 3 19  5
+plot(chain5$SIG2[,3],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma[3]^2))
+plot(chain5$SIG2[,19],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma[19]^2))
+plot(chain5$SIG2[,5],type = "p",pch = ".",xlab = "Iteración",ylab = expression(sigma[5]^2))
+
+plot(chain5$OTROS[,1],type = "p", pch = ".", xlab = "Iteración", ylab = expression(kappa^2))
 plot(chain5$OTROS[,2],type = "p", pch = ".", xlab = "Iteración", ylab = expression(mu))
-plot(chain5$OTROS[,3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau))
-plot(chain5$OTROS[,4],type = "p", pch = ".", xlab = "Iteración", ylab = expression(ups))
+plot(chain5$OTROS[,3],type = "p", pch = ".", xlab = "Iteración", ylab = expression(tau^2))
+plot(chain5$OTROS[,4],type = "p", pch = ".", xlab = "Iteración", ylab = expression(sigma^2))
 ```
-
+### Pruebas de convergencia (Tamaño efectivo de Muestra, Error estándar de Montecarlo, Coeficiente del error de Montecarlo)
 ```{r}
-neffotros_5 <- coda::effectiveSize(chain5$OTROS)
-nefftheta_5 <- coda::effectiveSize(chain5$THETA)
-neffsig2_5 <- coda::effectiveSize(chain5$SIG2)
-neffzeta_5 <- coda::effectiveSize(chain5$ZETA)
+#Tamaños efectivos de muestra
+neff_ZETA_5 <- coda::effectiveSize(chain5$ZETA)
+neff_THETA_5 <- coda::effectiveSize(chain5$THETA)
+neff_SIG_5 <- coda::effectiveSize(chain5$SIG2)
+(summary(neff_ZETA_5))
+(summary(neff_THETA_5))
+(summary(neff_SIG_5))
+(neff_OTROS_5 <- coda::effectiveSize(chain5$OTROS))
+
+#error estandar de Monte Carlo
+EMC_ZETA_5 <- apply(X = chain5$ZETA, MARGIN = 2, FUN = sd)/sqrt(neff_ZETA_5)
+EMC_THETA_5 <- apply(X = chain5$THETA, MARGIN = 2, FUN = sd)/sqrt(neff_THETA_5)
+EMC_SIG_5 <- apply(X = chain5$SIG2, MARGIN = 2, FUN = sd)/sqrt(neff_SIG_5)
+EMC_OTROS_5 <- apply(X = chain5$OTROS, MARGIN = 2, FUN = sd)/sqrt(neff_OTROS_5)
+
+#coeficiente de variación de Monte Carlo (%)
+CVMC_ZETA_5 <- 100*abs(EMC_ZETA_5/colMeans(chain5$ZETA))
+CVMC_THETA_5 <- 100*abs(EMC_THETA_5/colMeans(chain5$THETA))
+CVMC_SIG_5 <- 100*abs(EMC_SIG_5/colMeans(chain5$SIG2))
+CVMC_OTROS_5 <- 100*abs(EMC_OTROS_5/colMeans(chain5$OTROS))
+
+(summary(round(CVMC_ZETA_5,digits = 4)))
+(summary(round(CVMC_THETA_5,digits = 4)))
+(summary(round(CVMC_SIG_5,digits = 4)))
+(round(CVMC_OTROS_5,digits = 4))
 ```
 
-```{r}
-round(neffotros_5,digits = 3)
-round(apply(X = chain5$OTROS, MARGIN = 2, FUN = sd)/sqrt(neffotros_5), 3)
-```
-
-
-```{r}
-round(summary(apply(X = chain5$THETA, MARGIN = 2, FUN = sd)/sqrt(nefftheta_5)), 3)
-```
-```{r}
-round(summary(apply(X = chain5$SIG2, MARGIN = 2, FUN = sd)/sqrt(neffsig2_5)), 3)
-```
-
-
-```{r}
-round(summary(apply(X = chain5$ZETA, MARGIN = 2, FUN = sd)/sqrt(neffzeta_5)), 3)
-```
-```{r}
-round(summary(apply(X = chain5$SIG2, MARGIN = 2, FUN = sd)/sqrt(neffsig2_5)), 3)
-```
-
-
-
-
-```{r}
-save(chain5,file = "chain5.Rdata")
-```
-
-
-```{r}
-(neff_theta_1 <- coda::effectiveSize(chain1$THETA[,1]))
-(neff_sig2_1 <- coda::effectiveSize(chain1$THETA[,2]))
-
-
-sd(chain1$THETA[,1]/sqrt(neff_theta_1))
-sd(chain1$THETA[,2]/sqrt(neff_theta_1))
-
-#round(apply(X = chain1$THETA[,1], MARGIN = 2, FUN = sd)/sqrt(neff_theta_1), 3)
-#round(apply(X = chain1$THETA[,2], MARGIN = 2, FUN = sd)/sqrt(neff_sig2_1), 3)
-```
-
-
+## Punto 4
 ```{r Punto 4}
 par(mfrow = c(2, 2))
 
 # Gráfico 1 (negro)
-plot(x = 1:10000, y = unlist(chain2$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "black", ylim = c(-2873285, -2836923))
+plot(x = 1:10000, y = unlist(chain2$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "black", ylim = c(-2797969-5000, -2775317+5000))
 title("M2")
 
 # Gráfico 2 (rojo)
-plot(x = 1:10000, y = unlist(chain3$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "red",ylim = c(-2873285, -2836923))
+plot(x = 1:10000, y = unlist(chain3$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "red",ylim = c(-2797969-5000, -2775317+5000))
 title("M3")
 
 # Gráfico 3 (azul)
-plot(x = 1:10000, y = unlist(chain4$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "blue",ylim = c(-2873285, -2836923))
+plot(x = 1:10000, y = unlist(chain4$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "blue",ylim =c(-2797969-5000, -2775317+5000))
 title("M4")
 
 # Gráfico 4 (verde)
-plot(x = 1:10000, y = unlist(chain5$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "green",ylim = c(-2873285, -2836923))
+plot(x = 1:10000, y = unlist(chain5$LL), type = "p", pch = ".", xlab = "Iteración", ylab = "Log-verosimilitud", col = "green",ylim = c(-2797969-5000, -2775317+5000))
 title("M5")
 
 ```
 
+## Punto 5
 ```{r Punto 5}
 nj <- datos %>%
   group_by(COLE_COD_DEPTO_UBICACION) %>%
@@ -986,7 +1036,7 @@ m <- length(nj)
 ##DIC
 
 #M1
-LP1 <- as.numeric(chain1$LL$LL)
+LP1 <- as.numeric(chain1$LL$ll)
 thetahat_1 <- mean(chain1$THETA[,1])
 sigma2hat_1 <- mean(chain1$THETA[,2])
 lpyth_m1 <- sum(dnorm(x = y,mean = thetahat_1,sd = sqrt(sigma2hat_1),log = T))
@@ -1030,6 +1080,7 @@ dic_m5 <- -2*lpyth_m5+2*pDIC_m5
 DICs <- c(dic_m1,dic_m2,dic_m3,dic_m4,dic_m5)
 DICs
 
+(which.min(DICs))
 
 
 ```
@@ -1046,13 +1097,13 @@ for (j in 1:m) {
 }
 ```
 
-
+## Punto 6
 ```{r  Punto 6}
 
 vecmu <- cbind(chain1$THETA[,1],chain2$THETA$mu,chain3$THETA$mu,chain4$OTROS$mu,chain5$OTROS$mu)
 
 medias <- apply(vecmu, MARGIN = 2, mean)
-medias <- round(medias, digits = 3)
+medias <- round(medias, digits = 2)
 
 ICs <- apply(vecmu, MARGIN = 2, function(x) quantile(x, c(0.025, 0.975)))
 ICs <- round(ICs, digits = 3)
@@ -1063,6 +1114,7 @@ punto_6 <- rbind(medias,ICs)
 print(punto_6)
 ```
 
+## Punto 7
 ```{r Punto 7}
 estadisticos <- datos %>% 
   group_by(datos$COLE_COD_DEPTO_UBICACION) %>% 
@@ -1138,6 +1190,7 @@ for (j in 1:m) {
   lines(x = that[j], y = j, type = "p", pch = 16, cex = 0.8, col = colo[j])
 }
 ```
+## Punto 8
 ```{r Punto 8}
 # k means para cada iteracion
 
@@ -1177,12 +1230,11 @@ par(mar = c(2.75,2.75,0.5,0.5), mgp = c(1.7,0.7,0))
 corrplot::corrplot(corr = A, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "n")
 ```
 
-
+## Punto 9
 ```{r}
 regresion <- Mapa %>%
   select(cod_dep, dep, IP2018) %>%
   as.data.frame()
-
 
 predicciones <- matrix(data = NA, nrow = 10000, ncol=8)
 
@@ -1196,9 +1248,12 @@ for (b in 1:10000) {
   predicciones[b, ] <- a
 }
 
-colMeans(predicciones)
-```
+predIP2018 <- colMeans(predicciones)
 
+
+
+```
+  
 
 
 ```{r}
@@ -1207,5 +1262,13 @@ colMeans(predicciones)
 #load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain3.Rdata")
 #load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain4.Rdata")
 #load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain5.Rdata")
+```
+
+```{r}
+save(chain1,file = "chain1.Rdata")
+save(chain2,file = "chain2.Rdata")
+save(chain3,file = "chain3.Rdata")
+save(chain4,file = "chain4.Rdata")
+save(chain5,file = "chain5.Rdata")
 ```
 
