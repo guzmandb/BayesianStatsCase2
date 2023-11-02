@@ -167,7 +167,7 @@ punt_muestrales_mpios <- datos %>%
 punt_muestrales_mpios$COLE_COD_MCPIO_UBICACION <- sub("^00", "0", punt_muestrales_mpios$COLE_COD_MCPIO_UBICACION)
 
 Mapa_mpios <- punt_muestrales_mpios %>%
-  full_join(estadisticas_edu,by = c("COLE_COD_MCPIO_UBICACION"="CÓDIGO_MUNICIPIO"))%>%
+  left_join(estadisticas_edu,by = c("COLE_COD_MCPIO_UBICACION"="CÓDIGO_MUNICIPIO"))%>%
   as.data.frame()
 
 
@@ -175,13 +175,13 @@ Mapa_mpios <- punt_muestrales_mpios %>%
 
 
 ```{r}
-mpioshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
 mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
 
 mapmpios <- mpioshp %>%
   left_join(Mapa_mpios,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
 
-mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 ```
@@ -1087,14 +1087,30 @@ DICs
 
 ```{r Punto 5 WAIC}
 n <- length(datos$PUNT_GLOBAL)
+m <- length(unique(datos$COLE_COD_DEPTO_UBICACION))
 y <- datos$PUNT_GLOBAL
+
+##WAIC2
 Y <- vector(mode = "list", length = m)
 g <- rep(NA, n)
 for (j in 1:m) {
-  idx <- datos$ESTU_CONSECUTIVO == unique(datos$ESTU_CONSECUTIVO)[j]
+  idx <- datos$COLE_COD_DEPTO_UBICACION == unique(datos$COLE_COD_DEPTO_UBICACION)[j]
   g[idx] <- j
   Y[[j]] <- y[idx]
 }
+
+lppd_m1  <- 0
+pWAIC_m1 <- 0
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain2$THETA[,g2[i]], sd = sqrt(chain2$THETA$sig2))
+  lppd_m1 <- lppd_m1 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain2$THETA[,g2[i]], sd = sqrt(chain2$THETA$sig2),log = T)
+  pWAIC_m1 <- pWAIC_m1 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+waic_m1 <- -2*lppd_m1 + 2*pWAIC_m1
+waic_m1
 ```
 
 ## Punto 6
@@ -1131,6 +1147,7 @@ s2 <- estadisticos$s2
 ic1  <- NULL
 
 
+
 # ranking Bayesiano
 ids2 <- estadisticos$nombre
 that <- colMeans(chain5$THETA[,1:m])
@@ -1163,6 +1180,7 @@ estadisticos <- datos %>%
             s2 = var(PUNT_GLOBAL))
 
 ids2 <- estadisticos$nombre
+nj <- estadisticos$nj
 yb <- estadisticos$yb
 that <- yb
 s2 <- estadisticos$s2
@@ -1199,42 +1217,95 @@ clusters <-5
 
 # Inicializa una lista para almacenar los resultados
 kmedias <- matrix(NA,nrow=10000,ncol=32)
-
 # Realiza K-Means en cada fila de la matriz de datos
+set.seed(2023)
 for (i in 1:10000) {
-  departamentos <- t(chain5$THETA) # Obtiene la fila i
+  departamentos <- t(chain5$THETA[i,]) # Obtiene la fila i
   clusters_kmedias <- kmeans(departamentos, centers = clusters)  # Aplica K-Means a la fila
   kmedias[i,] <- clusters_kmedias$cluster  # Almacena el 
 }
 
-B <- nrow(chain5$THETA)
-B_grid <- seq(from = 5, to = B, len = B/10)
-# matriz de incidencia
 A <- matrix(data = 0, nrow = m, ncol = m)
-for (b in B_) {
+B <- nrow(kmedias)
+for (b in 1:B) {
   for (i in 1:(m-1)) {
     for (j in (i+1):m) {
-      if (kmedias$XI[b,i] == kmedias$XI[b,j]) {
+      if (kmedias[b,i] == kmedias[b,j]) {
         A[i,j] <- A[i,j] + 1/B
       } 
     }
   }
 }
+
 A <- A + t(A)
 diag(A) <- 1
+
+ybayes <- as.vector(colMeans(chain5$THETA))
 # se organizan las observaciones de acuerdo a la partición verdadera
+set.seed(2023)
+kbayes <- kmeans(ybayes, centers = clusters)
+xi = kbayes$cluster
 indices <- order(xi)
 A <- A[indices,indices]
+
+indices <- as.data.frame(indices)
+xi
+str(indices)
+
+str(nombres)
+nombres <- estadisticos$nombre
+pos <- seq(1:32)
+nombres <- cbind(nombres,pos)
+nombres <- as.data.frame(nombres)
+
+nombres$pos <- as.integer(nombres$pos)
+
+
+TAGS <- indices %>%left_join(nombres, by = c("indices"="pos"))
+str(TAGS)
+colnames(A) <- TAGS$nombres
+rownames(A) <- TAGS$nombres
+
 # visualización de la matriz de incidencia
-par(mar = c(2.75,2.75,0.5,0.5), mgp = c(1.7,0.7,0))
-corrplot::corrplot(corr = A, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "n")
+  par(mar = c(4.5,2.75,0.5,0.5), mgp = c(1.7,0.7,0))
+  corrplot::corrplot(corr = A, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "lt",title = "Matriz de Incidencia para Departamentos",mar = c(0,0,1,0),tl.cex = 0.59,tl.col = "black")
 ```
+```{r}
+Mapa8 <- cbind(Mapa,xi)
+Mapa8$xi <- as.character(Mapa8$xi)
+
+library(sf)
+
+deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+
+mapdeptos8 <- deptoshp %>%
+  left_join(Mapa8,by=c("DPTO_CCDGO"="cod_dep")) 
+
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundocol <- mundoshp %>% 
+            filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+
+box8 <- st_bbox(mapdeptos8)
+
+plot8 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapdeptos8, aes(fill = xi), col = "darkgray", linetype = "solid") +
+  coord_sf(xlim = c(box8$xmin, box8$xmax), ylim = c(box8$ymin, box8$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Clustering por puntaje medio en la prueba SABER \npor departamentos en Colombia", fill = "Clusters") +
+  scale_fill_manual(values = c("#FF7F00","#32FF00","#FFFF32","#654CFF","#E51932"))
+
+plot8
+
+
+```
+
+
 
 ## Punto 9
 ```{r}
 regresion <- Mapa %>%
   select(cod_dep, dep, IP2018) %>%
-  as.data.frame()
+as.data.frame()
 
 predicciones <- matrix(data = NA, nrow = 10000, ncol=8)
 
@@ -1248,12 +1319,178 @@ for (b in 1:10000) {
   predicciones[b, ] <- a
 }
 
+```
+
+```{r}
 predIP2018 <- colMeans(predicciones)
+ICIP2018 <- apply(predicciones, MARGIN = 2, function(x) quantile(x, c(0.025, 0.975)))
+predIP2018 <- round(predIP2018,digits = 4)
+ICIP2018 <- round(ICIP2018,digits = 4)
+
+punto_9 <- rbind(predIP2018,ICIP2018)
+
+deptosNA <- Mapa %>%
+  filter(is.na(dep)) %>%
+  select(cod_dep)
+
+nombresNA <- deptosNA %>%
+  left_join(datos,by=c("cod_dep"="COLE_COD_DEPTO_UBICACION"))%>%
+  select(cod_dep,COLE_DEPTO_UBICACION)%>%
+  as.data.frame()
+
+nombresNA <- nombresNA %>% distinct(cod_dep, .keep_all = TRUE)
+
+## Media posterior, Intervalos de confianza.
+(punto_9 <- `colnames<-`(punto_9, nombresNA$COLE_DEPTO_UBICACION))
+
+nombresNA$IP2018 <- as.vector(punto_9[1,])
+
+library(sf)
+
+deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+
+mapdeptosNA <- deptoshp %>%
+  left_join(nombresNA,by=c("DPTO_CCDGO"="cod_dep")) 
+
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundocol <- mundoshp %>% 
+            filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+
+box5 <- st_bbox(mapdeptosNA)
+
+plot5 <- ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapdeptosNA, aes(fill = IP2018), col = "darkgray", linetype = "solid") +
+  coord_sf(xlim = c(box5$xmin, box5$xmax), ylim = c(box5$ymin, box5$ymax), expand = FALSE) +
+  geom_sf_text(data = mapdeptosNA, aes(label = COLE_DEPTO_UBICACION), col = "black",
+               fontface = "bold", size = 2, fun.geometry = function(x) sf::st_centroid(x)) +
+  labs(x = "Longitud", y = "Latitud", title = "Índice de pobreza en el 2018\n para los departamento \nno medidos por el DANE", fill = "índice de pobreza") +
+  scale_fill_gradient(low = "white", high = "#FFD700", n.breaks = 5)
+
+plot5
+```
+  
+## Punto 10
+```{r}
+# k means para cada iteracion
+
+  nj <- length(unique(datos$COLE_COD_MCPIO_UBICACION))
+  
+  # Número de clústeres deseados
+  clusters_mpios <- 8
+  
+  # Inicializa una lista para almacenar los resultados
+  kmedias_mpios <- matrix(NA,nrow=10000,ncol=nj)
+  # Realiza K-Means en cada fila de la matriz de datos
+  set.seed(2023)
+  for (i in 1:10000) {
+    municipios <- t(chain5$ZETA[i,]) 
+    clusters_kmedias_mpios <- kmeans(municipios, centers = clusters_mpios)  
+    kmedias_mpios[i,] <- clusters_kmedias_mpios$cluster  
+  }
+
+  
+A_mpios <- matrix(data = 0, nrow = nj, ncol = nj)
+B <- nrow(kmedias_mpios)
+for (b in 1:B) {
+  for (i in 1:(nj-1)) {
+    for (j in (i+1):nj) {
+      if (kmedias_mpios[b,i] == kmedias_mpios[b,j]) {
+        A_mpios[i,j] <- A_mpios[i,j] + 1/B
+      } 
+    }
+  }
+}
+
+
+A_mpios <- A_mpios + t(A_mpios)
+diag(A_mpios) <- 1
+
+
+
+yzeta <- as.vector(colMeans(chain5$ZETA))
+# se organizan las observaciones de acuerdo a la partición verdadera
+set.seed(2023)
+kzeta <- kmeans(yzeta, centers = clusters_mpios)
+xi_zeta = kzeta$cluster
+indices_z <- order(xi_zeta)
+A_mpios <- A_mpios[indices_z,indices_z]
+
+indices_z <- as.data.frame(indices_z)
+
+
+estadisticas_mpios <- datos %>%
+  mutate(COLE_COD_MCPIO_UBICACION = ifelse(substr(COLE_COD_MCPIO_UBICACION, 1, 1) == "0", substr(COLE_COD_MCPIO_UBICACION, 2, nchar(COLE_COD_MCPIO_UBICACION)), COLE_COD_MCPIO_UBICACION)) %>%
+  group_by(COLE_COD_MCPIO_UBICACION) %>%
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION),
+            nombre = unique(COLE_MCPIO_UBICACION),
+            njk = n(),
+            ybjk = mean(PUNT_GLOBAL),
+            s2jk = var(PUNT_GLOBAL)) %>%
+  arrange(codigo)
+
+
+
+nombres_mpios <- estadisticas_mpios$nombre 
+pos_mpios <- seq(1:nj)
+nombres_mpios <- cbind(nombres_mpios,pos_mpios)
+nombres_mpios <- as.data.frame(nombres_mpios)
+
+nombres_mpios$pos_mpios <- as.integer(nombres_mpios$pos_mpios)
+
+
+
+TAGS_mpios <- indices_z %>%left_join(nombres_mpios, by = c("indices_z"="pos_mpios"))
+str(TAGS_mpios)
+colnames(A_mpios) <- TAGS_mpios$nombres_mpios
+rownames(A_mpios) <- TAGS_mpios$nombres_mpios
+
+# visualización de la matriz de incidencia
+par(mar = c(6.5, 2.75, 0.5, 0.5), mgp = c(1.7, 0.7, 0))
+corrplot::corrplot(corr = A_mpios, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "n", title = "Matriz de Incidencia para municipios",mar = c(0,0,1,0))
 
 
 
 ```
-  
+```{r}
+
+Mapa10 <- cbind(Mapa_mpios,xi_zeta)
+Mapa10$xi_zeta <- as.character(Mapa10$xi_zeta)
+
+
+mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
+
+mapmpios <- mpioshp %>%
+  left_join(Mapa10,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
+
+
+#mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
+#mundocol <- mundoshp %>% 
+            #filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+
+
+box10 <- st_bbox(mapmpios)
+   ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapmpios, aes(fill = xi_zeta), col = "gray", linetype = "solid", size=0.001) +
+  coord_sf(xlim = c(box10$xmin, box10$xmax), ylim = c(box10$ymin, box10$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Clustering por puntaje medio en la prueba SABER \npor municipios en Colombia", fill = "Cluster") +
+  scale_fill_manual(values = c("#C86925","#FDF56C","#FC9576","#5D57AF","#B2CE31","#FF2027","#B1D6C5","#AB8323"))
+
+```
+
+## Punto 11
+```{r}
+Mapa_mpiosNA <- Mapa_mpios %>% 
+  filter(is.na(COBERTURA_NETA_SECUNDARIA)) %>%
+  as.data.frame()
+
+
+Mapa_mpiosNA
+```
+
+
 
 
 ```{r}
@@ -1270,5 +1507,14 @@ save(chain2,file = "chain2.Rdata")
 save(chain3,file = "chain3.Rdata")
 save(chain4,file = "chain4.Rdata")
 save(chain5,file = "chain5.Rdata")
+```
+
+```{r}
+getwd()
+load("chain1.Rdata")
+load("chain2.Rdata")
+load("chain3.Rdata")
+load("chain4.Rdata")
+load("chain5.Rdata")
 ```
 
