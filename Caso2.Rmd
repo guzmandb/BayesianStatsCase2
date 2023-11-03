@@ -107,12 +107,15 @@ Mapa <- setNames(Mapa,c("cod_dep","dep","IP2018","puntmedio"))
 library(sf)
 #setwd("C:/Bayesiana/Caso2/misc")
 
-deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+deptoshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+#deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
 
 mapdeptos <- deptoshp %>%
   left_join(Mapa,by=c("DPTO_CCDGO"="cod_dep")) 
 
-mundoshp <- st_read("admin00.shp",quiet=TRUE)
+#mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
+
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 str(mundocol)
@@ -144,6 +147,10 @@ plot2 <- ggplot() +
 
 ```{r}
 library(gridExtra)
+```
+
+
+```{r}
 grid.arrange(plot1, plot2, ncol = 2)
 ```
 
@@ -175,13 +182,15 @@ Mapa_mpios <- punt_muestrales_mpios %>%
 
 
 ```{r}
-mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+#mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_MPIO_POLITICO.shp",quiet=TRUE) 
 mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
 
 mapmpios <- mpioshp %>%
   left_join(Mapa_mpios,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
 
-mundoshp <- st_read("admin00.shp",quiet=TRUE)
+#mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 ```
@@ -211,7 +220,7 @@ grid.arrange(plot3, plot4, ncol = 2)
 
 
 
-## Implemetación de los modelos
+## Implementación de los modelos
 
 ###MODELO 1, modelo normal
 ```{r Implementación Modelos}
@@ -1085,6 +1094,191 @@ DICs
 
 ```
 
+## Punto 5
+```{r Punto 5}
+nj <- datos %>%
+  group_by(COLE_COD_DEPTO_UBICACION) %>%
+  summarise(nj = n()) %>%
+  pull(nj)
+m <- length(nj)
+
+##DIC
+
+#M1
+LP1 <- as.numeric(chain1$LL$ll)
+thetahat_1 <- mean(chain1$THETA[,1])
+sigma2hat_1 <- mean(chain1$THETA[,2])
+lpyth_m1 <- sum(dnorm(x = y,mean = thetahat_1,sd = sqrt(sigma2hat_1),log = T))
+pDIC_m1 <- 2*(lpyth_m1-mean(LP1))
+dic_m1 <- -2*lpyth_m1 + 2*pDIC_m1
+
+#M2 
+LP2 <- as.numeric(chain2$LL$ll)
+thetahat_2 <- colMeans(chain2$THETA[,1:m])
+sigma2hat_2 <- mean(chain2$THETA$sig2)
+lpyth_m2 <- sum(dnorm(x = y,mean =rep(thetahat_2,nj),sd = sqrt(sigma2hat_2),log = T))
+pDIC_m2 <- 2*(lpyth_m2-mean(LP2))
+dic_m2 <- -2*lpyth_m2 + 2*pDIC_m2
+
+#M3
+LP3 <- as.numeric(chain3$LL$ll)
+thetahat_3 <- colMeans(chain3$THETA[,1:m])
+sigma2hat_3 <- colMeans(chain3$THETA[,(m+1):(m*2)])
+lpyth_m3 <- sum(dnorm(x = y,mean =rep(thetahat_3,nj),sd = sqrt(rep(sigma2hat_3,nj)),log = T))
+pDIC_m3 <- 2*(lpyth_m3-mean(LP3))
+dic_m3 <- -2*lpyth_m3 + 2*pDIC_m3
+
+
+#M4
+LP4 <- as.numeric(chain4$LL$ll)
+zetahat_4 <- colMeans(chain4$ZETA)
+kappa2hat_4 <- mean(chain4$OTROS$k2)
+lpyth_m4 <- sum(dnorm(x = y, mean = zetahat_4, sd = sqrt(kappa2hat_4),log = T))
+pDIC_m4 <- 2*(lpyth_m4-mean(LP4))
+dic_m4 <- -2*lpyth_m4 + 2*pDIC_m4
+
+#M5
+LP5 <- as.numeric(chain5$LL$ll)
+zetahat_5 <- colMeans(chain5$ZETA)
+kappa2hat_5 <- mean(chain5$OTROS$k2)
+lpyth_m5 <- sum(dnorm(x = y, mean = zetahat_5, sd = sqrt(kappa2hat_5),log = T))
+pDIC_m5 <- 2*(lpyth_m5-mean(LP5))
+dic_m5 <- -2*lpyth_m5+2*pDIC_m5
+dic_m5
+
+DICs <- c(dic_m1,dic_m2,dic_m3,dic_m4,dic_m5)
+DICs
+
+(which.min(DICs))
+
+
+
+```
+```{r}
+
+```
+
+```{r}
+calculate_waic= function(log_lik){
+  waic_result=loo::waic(log_lik)
+  return(waic_result)
+}
+
+log_lik_model1=as.matrix(chain1$LL)
+waic_model1=calculate_waic(log_lik_model1)
+
+log_lik_model2=as.matrix(chain2$LL)
+waic_model2=calculate_waic(log_lik_model2)
+print(waic_model2)
+
+log_lik_model3=as.matrix(chain3$LL)
+waic_model3=calculate_waic(log_lik_model3)
+print(waic_model3)
+
+log_lik_model4=as.matrix(chain4$LL)
+waic_model4=calculate_waic(log_lik_model4)
+print(waic_model4)
+
+log_lik_model5=as.matrix(chain5$LL)
+waic_model5=calculate_waic(log_lik_model5)
+print(waic_model5)
+
+(waic1=waic_model1$estimates[3])
+(waic2=waic_model2$estimates[3])
+(waic3=waic_model3$estimates[3])
+(waic4=waic_model4$estimates[3])
+(waic5=waic_model5$estimates[3])
+WAICs <- c(waic1,waic2,waic3,waic4,waic5)
+WAICs
+DICs
+(which.min(WAICs))
+```
+
+
+```{r Punto 5 WAIC}
+n <- length(datos$PUNT_GLOBAL)
+m <- length(unique(datos$COLE_COD_DEPTO_UBICACION))
+y <- datos$PUNT_GLOBAL
+
+##WAIC2
+Y <- vector(mode = "list", length = m)
+g <- rep(NA, n)
+for (j in 1:m) {
+  idx <- datos$COLE_COD_DEPTO_UBICACION == unique(datos$COLE_COD_DEPTO_UBICACION)[j]
+  g[idx] <- j
+  Y[[j]] <- y[idx]
+}
+
+lppd_m2  <- 0
+pWAIC_m2 <- 0
+#library(parallel)
+#library(doParallel)
+#cl <- makeCluster(7)
+#registerDoParallel(cl)
+tictoc::tic()
+set.seed(2023)
+#foreach(i = 1:n, .combine = "+", .packages = c("boot")) %dopar% {
+for (i in 1:n){
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain2$THETA[,g[i]], sd = sqrt(chain2$THETA$sig2))
+  lppd_m2 <- lppd_m2 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain2$THETA[,g[i]], sd = sqrt(chain2$THETA$sig2),log = T)
+  pWAIC_m2 <- pWAIC_m2 + 2*(log(mean(tmp1))) - mean(tmp2)
+  
+
+}
+tictoc::toc()
+waic_m2 <- -2*lppd_m2 + 2*pWAIC_m2
+waic_m2
+```
+```{r}
+lppd_m3  <- 0
+pWAIC_m3 <- 0
+set.seed(2023)
+tictoc::tic()
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain3$THETA[,g[i]], sd = sqrt(chain3$THETA[,m+g[i]]))
+  lppd_m3 <- lppd_m3 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain3$THETA[,g[i]], sd = sqrt(chain3$THETA[,m+g[i]]), log = T)
+  pWAIC_m3 <- pWAIC_m3 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+tictoc::toc()
+waic_m3 <- -2*lppd_m3 + 2*pWAIC_m3
+```
+
+
+
+```{r}
+calcular_WAIC <- function(y, muestras, log_verosimilitudes) {
+  S <- nrow(chain2$THETA)
+  n <- length(y)
+  
+  # Calcular el término de log-verosimilitud puntual
+  lppd <- sum(log(rowMeans(exp(chain2$LL))))
+  
+  # Calcular el término de varianza efectiva
+  p_eff <- sum(apply(chain2$LL, 1, var))
+  
+  # Calcular el WAIC
+  waic <- -2 * (lppd - p_eff)
+  return(waic)
+}
+
+
+
+# Calcula el WAIC
+waic <- calcular_WAIC(y = y, muestras = chain2$THETA, log_verosimilitudes = chain2$LL)
+print(waic)
+```
+
+
+
+
+
+--------
 ```{r Punto 5 WAIC}
 n <- length(datos$PUNT_GLOBAL)
 m <- length(unique(datos$COLE_COD_DEPTO_UBICACION))
@@ -1241,19 +1435,21 @@ A <- A + t(A)
 diag(A) <- 1
 
 ybayes <- as.vector(colMeans(chain5$THETA))
+orden <- order(ybayes,decreasing = T)
 # se organizan las observaciones de acuerdo a la partición verdadera
 set.seed(2023)
 kbayes <- kmeans(ybayes, centers = clusters)
 xi = kbayes$cluster
 indices <- order(xi)
+indices <- orden
 A <- A[indices,indices]
 
 indices <- as.data.frame(indices)
 xi
 str(indices)
 
-str(nombres)
 nombres <- estadisticos$nombre
+str(nombres)
 pos <- seq(1:32)
 nombres <- cbind(nombres,pos)
 nombres <- as.data.frame(nombres)
@@ -1271,17 +1467,82 @@ rownames(A) <- TAGS$nombres
   corrplot::corrplot(corr = A, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "lt",title = "Matriz de Incidencia para Departamentos",mar = c(0,0,1,0),tl.cex = 0.59,tl.col = "black")
 ```
 ```{r}
+# k means para cada iteracion
+
+# Número de clústeres deseados
+clusters <-5
+
+# Inicializa una lista para almacenar los resultados
+kmedias <- matrix(NA,nrow=10000,ncol=32)
+# Realiza K-Means en cada fila de la matriz de datos
+set.seed(2023)
+for (i in 1:10000) {
+  departamentos <- t(chain5$THETA[i,]) # Obtiene la fila i
+  clusters_kmedias <- kmeans(departamentos, centers = clusters)  # Aplica K-Means a la fila
+  kmedias[i,] <- clusters_kmedias$cluster  # Almacena el 
+}
+
+A <- matrix(data = 0, nrow = m, ncol = m)
+B <- nrow(kmedias)
+for (b in 1:B) {
+  for (i in 1:(m-1)) {
+    for (j in (i+1):m) {
+      if (kmedias[b,i] == kmedias[b,j]) {
+        A[i,j] <- A[i,j] + 1/B
+      } 
+    }
+  }
+}
+
+A <- A + t(A)
+diag(A) <- 1
+
+ybayes <- as.vector(colMeans(chain5$THETA))
+# se organizan las observaciones de acuerdo a la partición verdadera
+set.seed(2023)
+kbayes <- kmeans(ybayes, centers = clusters)
+xi = kbayes$cluster
+indices <- order(xi)
+A <- A[indices,indices]
+
+indices <- as.data.frame(indices)
+xi
+str(indices)
+
+nombres <- estadisticos$nombre
+str(nombres)
+pos <- seq(1:32)
+nombres <- cbind(nombres,pos)
+nombres <- as.data.frame(nombres)
+
+nombres$pos <- as.integer(nombres$pos)
+
+
+TAGS <- indices %>%left_join(nombres, by = c("indices"="pos"))
+str(TAGS)
+colnames(A) <- TAGS$nombres
+rownames(A) <- TAGS$nombres
+
+# visualización de la matriz de incidencia
+  par(mar = c(4.5,2.75,0.5,0.5), mgp = c(1.7,0.7,0))
+  corrplot::corrplot(corr = A, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "lt",title = "Matriz de Incidencia para Departamentos",mar = c(0,0,1,0),tl.cex = 0.59,tl.col = "black")
+```
+
+
+```{r}
 Mapa8 <- cbind(Mapa,xi)
 Mapa8$xi <- as.character(Mapa8$xi)
 
 library(sf)
 
-deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+#deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+deptoshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_DPTO_POLITICO.shp",quiet=TRUE) 
 
 mapdeptos8 <- deptoshp %>%
   left_join(Mapa8,by=c("DPTO_CCDGO"="cod_dep")) 
 
-mundoshp <- st_read("admin00.shp",quiet=TRUE)
+#mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 
@@ -1291,7 +1552,7 @@ plot8 <- ggplot() +
   geom_sf(data = mundocol) +
   geom_sf(data = mapdeptos8, aes(fill = xi), col = "darkgray", linetype = "solid") +
   coord_sf(xlim = c(box8$xmin, box8$xmax), ylim = c(box8$ymin, box8$ymax), expand = FALSE) +
-  labs(x = "Longitud", y = "Latitud", title = "Clustering por puntaje medio en la prueba SABER \npor departamentos en Colombia", fill = "Clusters") +
+  labs(x = "Longitud", y = "Latitud", title = "Clustering por departamentos en Colombia \nsegun el puntaje medio en la prueba SABER 2022-II", fill = "Clusters") +
   scale_fill_manual(values = c("#FF7F00","#32FF00","#FFFF32","#654CFF","#E51932"))
 
 plot8
@@ -1308,7 +1569,7 @@ regresion <- Mapa %>%
 as.data.frame()
 
 predicciones <- matrix(data = NA, nrow = 10000, ncol=8)
-
+set.seed(2023)
 for (b in 1:10000) {
   media <- unlist(chain5$THETA[b,]) 
   regresion$media <- media
@@ -1322,6 +1583,8 @@ for (b in 1:10000) {
 ```
 
 ```{r}
+
+
 predIP2018 <- colMeans(predicciones)
 ICIP2018 <- apply(predicciones, MARGIN = 2, function(x) quantile(x, c(0.025, 0.975)))
 predIP2018 <- round(predIP2018,digits = 4)
@@ -1345,14 +1608,31 @@ nombresNA <- nombresNA %>% distinct(cod_dep, .keep_all = TRUE)
 
 nombresNA$IP2018 <- as.vector(punto_9[1,])
 
+# Obtén el índice de ordenación de las medias posteriores
+orden <- order(punto_9["predIP2018", ],decreasing = T)
+
+# Reordena el dataframe punto_9 según el índice de orden
+punto_9_ordenado <- punto_9[, orden]
+
+# Muestra el dataframe ordenado
+print(punto_9_ordenado)
+```
+```{r}
+library(xtable)
+xtable(punto_9_ordenado, file = "sample_table.tex")
+```
+
+```{r}
+
+
 library(sf)
 
-deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+deptoshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_DPTO_POLITICO.shp",quiet=TRUE) 
 
 mapdeptosNA <- deptoshp %>%
   left_join(nombresNA,by=c("DPTO_CCDGO"="cod_dep")) 
 
-mundoshp <- st_read("admin00.shp",quiet=TRUE)
+mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 
@@ -1364,7 +1644,7 @@ plot5 <- ggplot() +
   coord_sf(xlim = c(box5$xmin, box5$xmax), ylim = c(box5$ymin, box5$ymax), expand = FALSE) +
   geom_sf_text(data = mapdeptosNA, aes(label = COLE_DEPTO_UBICACION), col = "black",
                fontface = "bold", size = 2, fun.geometry = function(x) sf::st_centroid(x)) +
-  labs(x = "Longitud", y = "Latitud", title = "Índice de pobreza en el 2018\n para los departamento \nno medidos por el DANE", fill = "índice de pobreza") +
+  labs(x = "Longitud", y = "Latitud", title = "Predicción de Índice de pobreza \nen el 2018 para los departamento \nno medidos por el DANE", fill = "índice de pobreza") +
   scale_fill_gradient(low = "white", high = "#FFD700", n.breaks = 5)
 
 plot5
@@ -1413,7 +1693,8 @@ yzeta <- as.vector(colMeans(chain5$ZETA))
 set.seed(2023)
 kzeta <- kmeans(yzeta, centers = clusters_mpios)
 xi_zeta = kzeta$cluster
-indices_z <- order(xi_zeta)
+orden_z = order(yzeta,decreasing = T)
+indices_z <- orden_z
 A_mpios <- A_mpios[indices_z,indices_z]
 
 indices_z <- as.data.frame(indices_z)
@@ -1452,13 +1733,14 @@ corrplot::corrplot(corr = A_mpios, is.corr = FALSE, addgrid.col = NA, method = "
 
 
 ```
+
 ```{r}
 
 Mapa10 <- cbind(Mapa_mpios,xi_zeta)
 Mapa10$xi_zeta <- as.character(Mapa10$xi_zeta)
 
 
-mpioshp <- st_read("MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_MPIO_POLITICO.shp",quiet=TRUE) 
 mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
 
 mapmpios <- mpioshp %>%
@@ -1507,6 +1789,91 @@ for (b in 1:10000) {
 
 
 ```
+```{r para clusters municipios no ordenados}
+# k means para cada iteracion
+
+  nj <- length(unique(datos$COLE_COD_MCPIO_UBICACION))
+  
+  # Número de clústeres deseados
+  clusters_mpios <- 8
+  
+  # Inicializa una lista para almacenar los resultados
+  kmedias_mpios <- matrix(NA,nrow=10000,ncol=nj)
+  # Realiza K-Means en cada fila de la matriz de datos
+  set.seed(2023)
+  for (i in 1:10000) {
+    municipios <- t(chain5$ZETA[i,]) 
+    clusters_kmedias_mpios <- kmeans(municipios, centers = clusters_mpios)  
+    kmedias_mpios[i,] <- clusters_kmedias_mpios$cluster  
+  }
+
+  
+A_mpios <- matrix(data = 0, nrow = nj, ncol = nj)
+B <- nrow(kmedias_mpios)
+for (b in 1:B) {
+  for (i in 1:(nj-1)) {
+    for (j in (i+1):nj) {
+      if (kmedias_mpios[b,i] == kmedias_mpios[b,j]) {
+        A_mpios[i,j] <- A_mpios[i,j] + 1/B
+      } 
+    }
+  }
+}
+
+
+A_mpios <- A_mpios + t(A_mpios)
+diag(A_mpios) <- 1
+
+
+
+yzeta <- as.vector(colMeans(chain5$ZETA))
+# se organizan las observaciones de acuerdo a la partición verdadera
+set.seed(2023)
+kzeta <- kmeans(yzeta, centers = clusters_mpios)
+xi_zeta = kzeta$cluster
+indices_z <- order(xi_zeta)
+A_mpios <- A_mpios[indices_z,indices_z]
+
+indices_z <- as.data.frame(indices_z)
+
+
+
+
+estadisticas_mpios <- datos %>%
+  mutate(COLE_COD_MCPIO_UBICACION = ifelse(substr(COLE_COD_MCPIO_UBICACION, 1, 1) == "0", substr(COLE_COD_MCPIO_UBICACION, 2, nchar(COLE_COD_MCPIO_UBICACION)), COLE_COD_MCPIO_UBICACION)) %>%
+  group_by(COLE_COD_MCPIO_UBICACION) %>%
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION),
+            nombre = unique(COLE_MCPIO_UBICACION),
+            njk = n(),
+            ybjk = mean(PUNT_GLOBAL),
+            s2jk = var(PUNT_GLOBAL)) %>%
+  arrange(codigo)
+
+
+
+nombres_mpios <- estadisticas_mpios$nombre 
+pos_mpios <- seq(1:nj)
+nombres_mpios <- cbind(nombres_mpios,pos_mpios)
+nombres_mpios <- as.data.frame(nombres_mpios)
+
+nombres_mpios$pos_mpios <- as.integer(nombres_mpios$pos_mpios)
+
+
+
+TAGS_mpios <- indices_z %>%left_join(nombres_mpios, by = c("indices_z"="pos_mpios"))
+str(TAGS_mpios)
+colnames(A_mpios) <- TAGS_mpios$nombres_mpios
+rownames(A_mpios) <- TAGS_mpios$nombres_mpios
+
+# visualización de la matriz de incidencia
+par(mar = c(6.5, 2.75, 0.5, 0.5), mgp = c(1.7, 0.7, 0))
+corrplot::corrplot(corr = A_mpios, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "n", title = "Matriz de Incidencia para municipios",mar = c(0,0,1,0))
+
+
+```
+
+
+
 
 ```{r}
 predCNS <- colMeans(predicciones_mpios)
@@ -1533,7 +1900,8 @@ estadisticas_mpios <- datos %>%
             ICjbk = quantile(PUNT_GLOBAL, c(0.025,0.975)),
             medianjbk = median(PUNT_GLOBAL),
             desv_estjbk = sd(PUNT_GLOBAL),
-            s2jk = var(PUNT_GLOBAL)) %>%
+            s2jk = var(PUNT_GLOBAL),
+            IQRjbk = IQR(PUNT_GLOBAL))%>%
   arrange(codigo) %>% 
   as.data.frame()
 
@@ -1546,7 +1914,7 @@ maxjbk <- estadisticas_mpios$maxjbk
 ICjbk <- estadisticas_mpios$ICjbk
 medianjnk <- estadisticas_mpios$medianjbk
 desv_estjbk <- estadisticas_mpios$desv_estjbk
-
+IQRjbk <- estadisticas_mpios$IQRjbk
 
 etiquetas_njk <- rep(1:length(njk),times = njk)
 
@@ -1563,6 +1931,8 @@ ICs <- matrix(data = NA, nrow = 10000, ncol=2*length(njk))
 medias <- matrix(data = NA, nrow = 10000, ncol=length(njk))
 mediana <- matrix(data = NA, nrow = 10000, ncol=length(njk))
 desvestandar <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+IQRs <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+
 
 set.seed(2023)
 for (i in 1:10000) {
@@ -1575,16 +1945,16 @@ for (i in 1:10000) {
   ICs[i,] <- unlist(tapply(ysimulados, etiquetas_njk, intervalo_confianza_quantile))
   mediana[i,] <- tapply(ysimulados, etiquetas_njk,median)
   desvestandar[i,] <- tapply(ysimulados, etiquetas_njk,sd)
+  IQRs[i,] <- tapply(ysimulados,etiquetas_njk, IQR)
 }
 
-dim(medias)
 PPPmedia <- colMeans(medias<ybjk)
 PPPmin <- colMeans(minimos < minjbk)
 PPPmax <- colMeans(maximos < maxjbk)
 PPPmediana <- colMeans(mediana < medianjnk)
 PPPsd <- colMeans(desvestandar < desv_estjbk)
-PPPic <- colMeans(ICjbk < ICs)
-
+PPPic <- colMeans(ICs < ICjbk  )
+PPPiqr <- colMeans(IQRs < IQRjbk)
 
 
 dfPPP <- data.frame(
@@ -1593,23 +1963,26 @@ dfPPP <- data.frame(
   PPPmax = PPPmax,
   PPPmediana = PPPmediana,
   PPPsd = PPPsd,
-  PPPic = PPPic
+  PPPiqr = PPPiqr
 )
 
-par(mar = c(5, 4, 4, 2) + 0.1)
-boxplot(dfPPP, main = "Boxplots de los valores ppp para \ndiferentes estadísticos de prueba", ylab = "ppp",xlab = "Estadísticos de prueba", col = "lightblue", border = "black",names = c("media","min","max","mediana","sd","IC"))
+par(mar = c(5, 4, 4, 2) + 0.5)
+boxplot(dfPPP, main = "Boxplots de los valores ppp para \ndiferentes estadísticos de prueba", ylab = "ppp",xlab = "Estadísticos de prueba", col = "lightblue", border = "black",names = c("media","min","max","mediana","sd","IQR"), outline = FALSE)
 
+for (i in 1:ncol(dfPPP)) {
+  x_pos <- jitter(rep(i, length(dfPPP[[i]]), factor = 0.4))  # Ajusta el factor de dispersión según tu preferencia
+  points(x_pos, dfPPP[[i]], col = "#4D4D4D", pch = 16, cex = 0.5)
+}
 
 
 ```
 
-
 ```{r}
-#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain1.Rdata")
-#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain2.Rdata")
-#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain3.Rdata")
-#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain4.Rdata")
-#load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain5.Rdata")
+load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain1.Rdata")
+load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain2.Rdata")
+load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain3.Rdata")
+load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain4.Rdata")
+load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain5.Rdata")
 ```
 
 ```{r}
