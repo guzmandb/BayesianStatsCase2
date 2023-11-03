@@ -24,6 +24,11 @@ library(readr)
 library(readxl)
 library(dplyr)
 library(ggplot2)
+library(sf)
+library(gridExtra)
+library(readr)
+library(stringr)
+library(xtable)
 
 #setwd("C:/Users/57300/OneDrive/Documentos/GitHub/BayesianStatsCase2")
 Saber11 <- read_delim("C:/Bayesiana/Caso2/SB11_20222.TXT", 
@@ -1183,15 +1188,14 @@ log_lik_model5=as.matrix(chain5$LL)
 waic_model5=calculate_waic(log_lik_model5)
 print(waic_model5)
 
-(waic1=waic_model1$estimates[3])
-(waic2=waic_model2$estimates[3])
-(waic3=waic_model3$estimates[3])
-(waic4=waic_model4$estimates[3])
-(waic5=waic_model5$estimates[3])
-WAICs <- c(waic1,waic2,waic3,waic4,waic5)
-WAICs
-DICs
-(which.min(WAICs))
+(waic1libreria=waic_model1$estimates[3])
+(waic2libreria=waic_model2$estimates[3])
+(waic3libreria=waic_model3$estimates[3])
+(waic4libreria=waic_model4$estimates[3])
+(waic5libreria=waic_model5$estimates[3])
+WAICsLibreria <- c(waic1libreria,waic2libreria,waic3libreria,waic4libreria,waic5libreria)
+WAICsLibreria
+(which.min(WAICsLibreria))
 ```
 
 
@@ -1306,9 +1310,110 @@ for (i in 1:n) {
 waic_m1 <- -2*lppd_m1 + 2*pWAIC_m1
 waic_m1
 ```
+-------------
 
-## Punto 6
-```{r  Punto 6}
+WAIC Sebastian
+
+------------
+
+```{r WAIC Sebastian}
+n <- length(datos$PUNT_GLOBAL)
+m <- length(unique(datos$COLE_COD_DEPTO_UBICACION))
+y <- datos$PUNT_GLOBAL
+f <- length(unique(datos$COLE_COD_MCPIO_UBICACION))
+
+#WAIC 1
+lppd_m0  <- 0
+pWAIC_m0 <- 0
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain1$THETA[,1], sd = sqrt(chain1$THETA[,2]))
+  lppd_m0 <- lppd_m0 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain1$THETA[,1], sd = sqrt(chain1$THETA[,2]), log = T)
+  pWAIC_m0 <- pWAIC_m0 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+waic_m1 <- -2*lppd_m0 + 2*pWAIC_m0
+
+
+##WAIC2
+Y <- vector(mode = "list", length = m)
+g <- rep(NA, n)
+for (j in 1:m) {
+  idx <- datos$COLE_COD_DEPTO_UBICACION == unique(datos$COLE_COD_DEPTO_UBICACION)[j]
+  g[idx] <- j
+  Y[[j]] <- y[idx]
+}
+
+lppd_m1  <- 0
+pWAIC_m1 <- 0
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain2$THETA[,g[i]], sd = sqrt(chain2$THETA$sig2))
+  lppd_m1 <- lppd_m1 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain2$THETA[,g[i]], sd = sqrt(chain2$THETA$sig2),log = T)
+  pWAIC_m1 <- pWAIC_m1 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+waic_m2 <- -2*lppd_m1 + 2*pWAIC_m1
+
+
+##WAIC 3
+lppd_m2  <- 0
+pWAIC_m2 <- 0
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain3$THETA[,g[i]], sd = sqrt(chain3$THETA[,m+g[i]]))
+  lppd_m2 <- lppd_m2 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain3$THETA[,g[i]], sd = sqrt(chain3$THETA[,m+g[i]]), log = T)
+  pWAIC_m2 <- pWAIC_m2 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+waic_m3 <- -2*lppd_m2 + 2*pWAIC_m2
+
+
+###WAIC 4
+Ym <- vector(mode = "list", length = f)
+r <- rep(NA, n)
+for (j in 1:f) {
+  idx2 <- datos$COLE_COD_MCPIO_UBICACION == unique(datos$COLE_COD_MCPIO_UBICACION)[j]
+  r[idx2] <- j
+  Ym[[j]] <- y[idx2]
+}
+
+lppd_m3  <- 0
+pWAIC_m3 <- 0
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain4$ZETA[,r[i]], sd = sqrt(chain4$OTROS$k2))
+  lppd_m3 <- lppd_m3 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain4$ZETA[,r[i]], sd = sqrt(chain4$OTROS$k2),log = T)
+  pWAIC_m3 <- pWAIC_m3 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+waic_m4 <- -2*lppd_m3 + 2*pWAIC_m3
+
+##WAIC 5
+lppd_m4  <- 0
+pWAIC_m4 <- 0
+for (i in 1:n) {
+  # lppd
+  tmp1 <- dnorm(x = y[i], mean = chain5$ZETA[,r[i]], sd = sqrt(chain5$OTROS$k2))
+  lppd_m4 <- lppd_m4 + log(mean(tmp1))
+  # pWAIC
+  tmp2 <- dnorm(x = y[i], mean = chain5$ZETA[,r[i]], sd = sqrt(chain5$OTROS$k2),log = T)
+  pWAIC_m4 <- pWAIC_m4 + 2*(log(mean(tmp1)) - mean(tmp2))
+}
+waic_m5 <- -2*lppd_m4 + 2*pWAIC_m4
+
+WAICs <- c(waic_m1,waic_m2,waic_m3,waic_m4,waic_m5)
+WAICs
+
+which.min(WAICs)
+```
+
+```{r Punto 5 WAIC}
+## Punto 6```{r  Punto 6}
 
 vecmu <- cbind(chain1$THETA[,1],chain2$THETA$mu,chain3$THETA$mu,chain4$OTROS$mu,chain5$OTROS$mu)
 
@@ -1653,7 +1758,7 @@ plot5
 ## Punto 10
 ```{r}
 # k means para cada iteracion
-
+tictoc::tic()
   nj <- length(unique(datos$COLE_COD_MCPIO_UBICACION))
   
   # Número de clústeres deseados
@@ -1729,66 +1834,12 @@ rownames(A_mpios) <- TAGS_mpios$nombres_mpios
 # visualización de la matriz de incidencia
 par(mar = c(6.5, 2.75, 0.5, 0.5), mgp = c(1.7, 0.7, 0))
 corrplot::corrplot(corr = A_mpios, is.corr = FALSE, addgrid.col = NA, method = "color", tl.pos = "n", title = "Matriz de Incidencia para municipios",mar = c(0,0,1,0))
-
-
-
-```
-
-```{r}
-
-Mapa10 <- cbind(Mapa_mpios,xi_zeta)
-Mapa10$xi_zeta <- as.character(Mapa10$xi_zeta)
-
-
-mpioshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_MPIO_POLITICO.shp",quiet=TRUE) 
-mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
-
-mapmpios <- mpioshp %>%
-  left_join(Mapa10,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
-
-
-#mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
-#mundocol <- mundoshp %>% 
-            #filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
-
-
-box10 <- st_bbox(mapmpios)
-   ggplot() +
-  geom_sf(data = mundocol) +
-  geom_sf(data = mapmpios, aes(fill = xi_zeta), col = "gray", linetype = "solid", size=0.001) +
-  coord_sf(xlim = c(box10$xmin, box10$xmax), ylim = c(box10$ymin, box10$ymax), expand = FALSE) +
-  labs(x = "Longitud", y = "Latitud", title = "Clustering por puntaje medio en la prueba SABER \npor municipios en Colombia", fill = "Cluster") +
-  scale_fill_manual(values = c("#C86925","#FDF56C","#FC9576","#5D57AF","#B2CE31","#FF2027","#B1D6C5","#AB8323"))
-
-```
-
-## Punto 11
-```{r}
-Mapa_mpiosNA <- Mapa_mpios %>% 
-  filter(is.na(COBERTURA_NETA_SECUNDARIA)) %>%
-  as.data.frame()
-
-valores_na <- which(is.na(Mapa_mpios$COBERTURA_NETA_SECUNDARIA))
-valores_na
-
-regresion_mpios <- Mapa_mpios %>%
-  select(COLE_COD_MCPIO_UBICACION, MUNICIPIO, COBERTURA_NETA_SECUNDARIA) %>%
-as.data.frame()
-
-predicciones_mpios <- matrix(data = NA, nrow = 10000, ncol=2)
-
-for (b in 1:10000) {
-  media <- unlist(chain5$ZETA[b,]) 
-  regresion_mpios$media <- media
-  modelo <- lm(COBERTURA_NETA_SECUNDARIA ~ media, data = regresion_mpios)
-  datos_na <- media[c(582,1098)]
-  new_data <- data.frame(media = datos_na)
-  a = predict(modelo,newdata = new_data)
-  predicciones_mpios[b, ] <- a
-}
+tictoc::toc()
 
 
 ```
+
+### matriz incidencia no ordenada por ranking 
 ```{r para clusters municipios no ordenados}
 # k means para cada iteracion
 
@@ -1871,6 +1922,63 @@ corrplot::corrplot(corr = A_mpios, is.corr = FALSE, addgrid.col = NA, method = "
 
 
 ```
+
+```{r}
+
+Mapa10 <- cbind(Mapa_mpios,xi_zeta)
+Mapa10$xi_zeta <- as.character(Mapa10$xi_zeta)
+
+
+mpioshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_MPIO_POLITICO.shp",quiet=TRUE) 
+mpioshp$MPIO_COD <- paste(mpioshp$DPTO_CCDGO,mpioshp$MPIO_CCDGO,sep = "")
+
+mapmpios <- mpioshp %>%
+  left_join(Mapa10,by=c("MPIO_COD"="COLE_COD_MCPIO_UBICACION")) 
+
+
+#mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
+#mundocol <- mundoshp %>% 
+            #filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
+
+
+box10 <- st_bbox(mapmpios)
+   ggplot() +
+  geom_sf(data = mundocol) +
+  geom_sf(data = mapmpios, aes(fill = xi_zeta), col = "gray", linetype = "solid", size=0.001) +
+  coord_sf(xlim = c(box10$xmin, box10$xmax), ylim = c(box10$ymin, box10$ymax), expand = FALSE) +
+  labs(x = "Longitud", y = "Latitud", title = "Clustering por puntaje medio en la prueba SABER \npor municipios en Colombia", fill = "Cluster") +
+  scale_fill_manual(values = c("#C86925","#FDF56C","#FC9576","#5D57AF","#B2CE31","#FF2027","#B1D6C5","#AB8323"))
+
+```
+
+## Punto 11
+```{r}
+Mapa_mpiosNA <- Mapa_mpios %>% 
+  filter(is.na(COBERTURA_NETA_SECUNDARIA)) %>%
+  as.data.frame()
+
+valores_na <- which(is.na(Mapa_mpios$COBERTURA_NETA_SECUNDARIA))
+valores_na
+
+regresion_mpios <- Mapa_mpios %>%
+  select(COLE_COD_MCPIO_UBICACION, MUNICIPIO, COBERTURA_NETA_SECUNDARIA) %>%
+as.data.frame()
+
+predicciones_mpios <- matrix(data = NA, nrow = 10000, ncol=2)
+
+for (b in 1:10000) {
+  media <- unlist(chain5$ZETA[b,]) 
+  regresion_mpios$media <- media
+  modelo <- lm(COBERTURA_NETA_SECUNDARIA ~ media, data = regresion_mpios)
+  datos_na <- media[c(582,1098)]
+  new_data <- data.frame(media = datos_na)
+  a = predict(modelo,newdata = new_data)
+  predicciones_mpios[b, ] <- a
+}
+
+
+```
+
 
 
 
