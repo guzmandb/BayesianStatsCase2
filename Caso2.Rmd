@@ -105,14 +105,14 @@ Mapa <- setNames(Mapa,c("cod_dep","dep","IP2018","puntmedio"))
 
 ```{r gráficas, include=FALSE}
 library(sf)
-setwd("C:/Bayesiana/Caso2/misc")
+#setwd("C:/Bayesiana/Caso2/misc")
 
-deptoshp <- st_read("C:/Bayesiana/Caso2/misc/MGN_DPTO_POLITICO.shp",quiet=TRUE) 
+deptoshp <- st_read("MGN_DPTO_POLITICO.shp",quiet=TRUE) 
 
 mapdeptos <- deptoshp %>%
   left_join(Mapa,by=c("DPTO_CCDGO"="cod_dep")) 
 
-mundoshp <- st_read("C:/Bayesiana/Caso2/misc/admin00.shp",quiet=TRUE)
+mundoshp <- st_read("admin00.shp",quiet=TRUE)
 mundocol <- mundoshp %>% 
             filter(CNTRY_NAME %in% c("Peru","Brazil","Venezuela","Ecuador","Panama"))
 str(mundocol)
@@ -1486,11 +1486,122 @@ Mapa_mpiosNA <- Mapa_mpios %>%
   filter(is.na(COBERTURA_NETA_SECUNDARIA)) %>%
   as.data.frame()
 
+valores_na <- which(is.na(Mapa_mpios$COBERTURA_NETA_SECUNDARIA))
+valores_na
 
-Mapa_mpiosNA
+regresion_mpios <- Mapa_mpios %>%
+  select(COLE_COD_MCPIO_UBICACION, MUNICIPIO, COBERTURA_NETA_SECUNDARIA) %>%
+as.data.frame()
+
+predicciones_mpios <- matrix(data = NA, nrow = 10000, ncol=2)
+
+for (b in 1:10000) {
+  media <- unlist(chain5$ZETA[b,]) 
+  regresion_mpios$media <- media
+  modelo <- lm(COBERTURA_NETA_SECUNDARIA ~ media, data = regresion_mpios)
+  datos_na <- media[c(582,1098)]
+  new_data <- data.frame(media = datos_na)
+  a = predict(modelo,newdata = new_data)
+  predicciones_mpios[b, ] <- a
+}
+
+
 ```
 
+```{r}
+predCNS <- colMeans(predicciones_mpios)
+ICCNS <- apply(predicciones_mpios, MARGIN = 2, function(x) quantile(x, c(0.025, 0.975)))
+predCNS <- round(predCNS,digits = 4)
+ICCNS <- round(ICCNS,digits = 4)
 
+(punto_11 <- rbind(predCNS,ICCNS))
+```
+
+## Punto 12
+
+```{r}
+
+estadisticas_mpios <- datos %>%
+  mutate(COLE_COD_MCPIO_UBICACION = ifelse(substr(COLE_COD_MCPIO_UBICACION, 1, 1) == "0", substr(COLE_COD_MCPIO_UBICACION, 2, nchar(COLE_COD_MCPIO_UBICACION)), COLE_COD_MCPIO_UBICACION)) %>%
+  group_by(COLE_COD_MCPIO_UBICACION) %>%
+  summarise(codigo = unique(COLE_COD_MCPIO_UBICACION),
+            nombre = unique(COLE_MCPIO_UBICACION),
+            njk = n(),
+            ybjk = mean(PUNT_GLOBAL),
+            minjbk = min(PUNT_GLOBAL),
+            maxjbk = max(PUNT_GLOBAL),
+            ICjbk = quantile(PUNT_GLOBAL, c(0.025,0.975)),
+            medianjbk = median(PUNT_GLOBAL),
+            desv_estjbk = sd(PUNT_GLOBAL),
+            s2jk = var(PUNT_GLOBAL)) %>%
+  arrange(codigo) %>% 
+  as.data.frame()
+
+
+njk <- estadisticas_mpios$njk
+
+ybjk <- estadisticas_mpios$ybjk
+minjbk <- estadisticas_mpios$minjbk
+maxjbk <- estadisticas_mpios$maxjbk
+ICjbk <- estadisticas_mpios$ICjbk
+medianjnk <- estadisticas_mpios$medianjbk
+desv_estjbk <- estadisticas_mpios$desv_estjbk
+
+
+etiquetas_njk <- rep(1:length(njk),times = njk)
+
+intervalo_confianza_quantile <- function(x) {
+  cuantiles <- quantile(x, c(0.025, 0.975))
+  return(cuantiles)
+}
+
+
+
+minimos <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+maximos <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+ICs <- matrix(data = NA, nrow = 10000, ncol=2*length(njk))
+medias <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+mediana <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+desvestandar <- matrix(data = NA, nrow = 10000, ncol=length(njk))
+
+set.seed(2023)
+for (i in 1:10000) {
+  zetas <- as.numeric(chain5$ZETA[i,])
+  k2 <- chain5$OTROS[i,1]
+  ysimulados <- rnorm(rep(njk,njk), mean = rep(zetas,njk),sd = sqrt(k2))
+  minimos[i,] <- tapply(ysimulados, etiquetas_njk,min)
+  maximos[i,] <- tapply(ysimulados, etiquetas_njk,max)
+  medias[i,] <- tapply(ysimulados, etiquetas_njk,mean)
+  ICs[i,] <- unlist(tapply(ysimulados, etiquetas_njk, intervalo_confianza_quantile))
+  mediana[i,] <- tapply(ysimulados, etiquetas_njk,median)
+  desvestandar[i,] <- tapply(ysimulados, etiquetas_njk,sd)
+}
+
+dim(medias)
+PPPmedia <- colMeans(medias<ybjk)
+PPPmin <- colMeans(minimos < minjbk)
+PPPmax <- colMeans(maximos < maxjbk)
+PPPmediana <- colMeans(mediana < medianjnk)
+PPPsd <- colMeans(desvestandar < desv_estjbk)
+PPPic <- colMeans(ICjbk < ICs)
+
+
+
+dfPPP <- data.frame(
+  PPPmedia = PPPmedia,
+  PPPmin = PPPmin,
+  PPPmax = PPPmax,
+  PPPmediana = PPPmediana,
+  PPPsd = PPPsd,
+  PPPic = PPPic
+)
+
+par(mar = c(5, 4, 4, 2) + 0.1)
+boxplot(dfPPP, main = "Boxplots de los valores ppp para \ndiferentes estadísticos de prueba", ylab = "ppp",xlab = "Estadísticos de prueba", col = "lightblue", border = "black",names = c("media","min","max","mediana","sd","IC"))
+
+
+
+```
 
 
 ```{r}
