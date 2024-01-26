@@ -6,16 +6,11 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-setwd("C:/Bayesiana/Caso2")
 ```
 
 
 ```{r, include=FALSE,include=FALSE}
-Sys.setlocale(category = "LC_COLLATE", locale = "Spanish_Colombia.utf8")
-Sys.setlocale(category = "LC_CTYPE", locale = "Spanish_Colombia.utf8")
-Sys.setlocale(category = "LC_MONETARY", locale = "Spanish_Colombia.utf8")
-Sys.setlocale(category = "LC_NUMERIC", locale = "C")
-Sys.setlocale(category = "LC_TIME", locale = "Spanish_Colombia.utf8")
+
 ```
 
 
@@ -1159,162 +1154,6 @@ DICs
 
 
 ```
-```{r}
-
-```
-
-```{r}
-calculate_waic= function(log_lik){
-  waic_result=loo::waic(log_lik)
-  return(waic_result)
-}
-
-log_lik_model1=as.matrix(chain1$LL)
-waic_model1=calculate_waic(log_lik_model1)
-
-log_lik_model2=as.matrix(chain2$LL)
-waic_model2=calculate_waic(log_lik_model2)
-print(waic_model2)
-
-log_lik_model3=as.matrix(chain3$LL)
-waic_model3=calculate_waic(log_lik_model3)
-print(waic_model3)
-
-log_lik_model4=as.matrix(chain4$LL)
-waic_model4=calculate_waic(log_lik_model4)
-print(waic_model4)
-
-log_lik_model5=as.matrix(chain5$LL)
-waic_model5=calculate_waic(log_lik_model5)
-print(waic_model5)
-
-(waic1libreria=waic_model1$estimates[3])
-(waic2libreria=waic_model2$estimates[3])
-(waic3libreria=waic_model3$estimates[3])
-(waic4libreria=waic_model4$estimates[3])
-(waic5libreria=waic_model5$estimates[3])
-WAICsLibreria <- c(waic1libreria,waic2libreria,waic3libreria,waic4libreria,waic5libreria)
-WAICsLibreria
-(which.min(WAICsLibreria))
-```
-
-
-```{r Punto 5 WAIC}
-n <- length(datos$PUNT_GLOBAL)
-m <- length(unique(datos$COLE_COD_DEPTO_UBICACION))
-y <- datos$PUNT_GLOBAL
-
-##WAIC2
-Y <- vector(mode = "list", length = m)
-g <- rep(NA, n)
-for (j in 1:m) {
-  idx <- datos$COLE_COD_DEPTO_UBICACION == unique(datos$COLE_COD_DEPTO_UBICACION)[j]
-  g[idx] <- j
-  Y[[j]] <- y[idx]
-}
-
-lppd_m2  <- 0
-pWAIC_m2 <- 0
-#library(parallel)
-#library(doParallel)
-#cl <- makeCluster(7)
-#registerDoParallel(cl)
-tictoc::tic()
-set.seed(2023)
-#foreach(i = 1:n, .combine = "+", .packages = c("boot")) %dopar% {
-for (i in 1:n){
-  # lppd
-  tmp1 <- dnorm(x = y[i], mean = chain2$THETA[,g[i]], sd = sqrt(chain2$THETA$sig2))
-  lppd_m2 <- lppd_m2 + log(mean(tmp1))
-  # pWAIC
-  tmp2 <- dnorm(x = y[i], mean = chain2$THETA[,g[i]], sd = sqrt(chain2$THETA$sig2),log = T)
-  pWAIC_m2 <- pWAIC_m2 + 2*(log(mean(tmp1))) - mean(tmp2)
-  
-
-}
-tictoc::toc()
-waic_m2 <- -2*lppd_m2 + 2*pWAIC_m2
-waic_m2
-```
-```{r}
-lppd_m3  <- 0
-pWAIC_m3 <- 0
-set.seed(2023)
-tictoc::tic()
-for (i in 1:n) {
-  # lppd
-  tmp1 <- dnorm(x = y[i], mean = chain3$THETA[,g[i]], sd = sqrt(chain3$THETA[,m+g[i]]))
-  lppd_m3 <- lppd_m3 + log(mean(tmp1))
-  # pWAIC
-  tmp2 <- dnorm(x = y[i], mean = chain3$THETA[,g[i]], sd = sqrt(chain3$THETA[,m+g[i]]), log = T)
-  pWAIC_m3 <- pWAIC_m3 + 2*(log(mean(tmp1)) - mean(tmp2))
-}
-tictoc::toc()
-waic_m3 <- -2*lppd_m3 + 2*pWAIC_m3
-```
-
-
-
-```{r}
-calcular_WAIC <- function(y, muestras, log_verosimilitudes) {
-  S <- nrow(chain2$THETA)
-  n <- length(y)
-  
-  # Calcular el término de log-verosimilitud puntual
-  lppd <- sum(log(rowMeans(exp(chain2$LL))))
-  
-  # Calcular el término de varianza efectiva
-  p_eff <- sum(apply(chain2$LL, 1, var))
-  
-  # Calcular el WAIC
-  waic <- -2 * (lppd - p_eff)
-  return(waic)
-}
-
-
-
-# Calcula el WAIC
-waic <- calcular_WAIC(y = y, muestras = chain2$THETA, log_verosimilitudes = chain2$LL)
-print(waic)
-```
-
-
-
-
-
---------
-```{r Punto 5 WAIC}
-n <- length(datos$PUNT_GLOBAL)
-m <- length(unique(datos$COLE_COD_DEPTO_UBICACION))
-y <- datos$PUNT_GLOBAL
-
-##WAIC2
-Y <- vector(mode = "list", length = m)
-g <- rep(NA, n)
-for (j in 1:m) {
-  idx <- datos$COLE_COD_DEPTO_UBICACION == unique(datos$COLE_COD_DEPTO_UBICACION)[j]
-  g[idx] <- j
-  Y[[j]] <- y[idx]
-}
-
-lppd_m1  <- 0
-pWAIC_m1 <- 0
-for (i in 1:n) {
-  # lppd
-  tmp1 <- dnorm(x = y[i], mean = chain2$THETA[,g2[i]], sd = sqrt(chain2$THETA$sig2))
-  lppd_m1 <- lppd_m1 + log(mean(tmp1))
-  # pWAIC
-  tmp2 <- dnorm(x = y[i], mean = chain2$THETA[,g2[i]], sd = sqrt(chain2$THETA$sig2),log = T)
-  pWAIC_m1 <- pWAIC_m1 + 2*(log(mean(tmp1)) - mean(tmp2))
-}
-waic_m1 <- -2*lppd_m1 + 2*pWAIC_m1
-waic_m1
-```
--------------
-
-WAIC Sebastian
-
-------------
 
 ```{r WAIC Sebastian}
 n <- length(datos$PUNT_GLOBAL)
@@ -2085,28 +1924,4 @@ for (i in 1:ncol(dfPPP)) {
 
 ```
 
-```{r}
-load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain1.Rdata")
-load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain2.Rdata")
-load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain3.Rdata")
-load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain4.Rdata")
-load("C:/Users/jher/Documents/GitHub/BayesianStatsCase2/chain5.Rdata")
-```
-
-```{r}
-save(chain1,file = "chain1.Rdata")
-save(chain2,file = "chain2.Rdata")
-save(chain3,file = "chain3.Rdata")
-save(chain4,file = "chain4.Rdata")
-save(chain5,file = "chain5.Rdata")
-```
-
-```{r}
-getwd()
-load("chain1.Rdata")
-load("chain2.Rdata")
-load("chain3.Rdata")
-load("chain4.Rdata")
-load("chain5.Rdata")
-```
 
